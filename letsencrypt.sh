@@ -283,12 +283,12 @@ request_challenge(){
     done
 }
 
-push_response_domain() {
+push_domain_response() {
     log push response for $DOMAIN
 
     # do something with DOMAIN, DOMAIN_TOKEN and DOMAIN_RESPONSE
-
     # echo "$DOMAIN_RESPONSE" > "/srv/www/$DOMAIN/.well-known/acme-challenge/$DOMAIN_TOKEN"
+
     return
 }
 
@@ -303,7 +303,7 @@ push_response() {
 
         DOMAIN_RESPONSE="$DOMAIN_TOKEN.$ACCOUNT_THUMB"
     
-        push_response_domain
+        push_domain_response
     done
 }
 
