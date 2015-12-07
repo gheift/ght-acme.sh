@@ -484,6 +484,7 @@ if [ -n "$PRINT_THUMB" ]; then
         nginx)
             cat <<"HERE" | sed "s/ACCOUNT_THUMB/$ACCOUNT_THUMB/g"
 location ~ "^/.well-known/acme-challenge/([-_a-zA-Z0-9]*)$" {
+    default_type text/plain;
     return 200 "$1.ACCOUNT_THUMB";
 }
 HERE
