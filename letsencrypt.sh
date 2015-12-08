@@ -19,7 +19,7 @@
 
 # temporary files to store input/output of curl or openssl
 
-trap 'rm -f "$RESP_HEADER" "$RESP_BODY" "$LAST_NONCE" "$LAST_NONCE_FETCH" "$OPENSSL_CONFIG" "$OPENSSL_IN" "$OPENSSL_OUT" "$OPENSSL_ERR" "$SERVER_CSR"' 0 2 3 9 11 13 15
+trap 'rm -f "$RESP_HEADER" "$RESP_BODY" "$LAST_NONCE" "$LAST_NONCE_FETCH" "$OPENSSL_CONFIG" "$OPENSSL_IN" "$OPENSSL_OUT" "$OPENSSL_ERR" "$TMP_SERVER_CSR"' 0 2 3 9 11 13 15
 
 # file to store header of http request
 RESP_HEADER="`mktemp -t le.$$.resp-header.XXXXXX`"
@@ -36,7 +36,7 @@ OPENSSL_IN="`mktemp -t le.$$.openssl.in.XXXXXX`"
 OPENSSL_OUT="`mktemp -t le.$$.openssl.out.XXXXXX`"
 OPENSSL_ERR="`mktemp -t le.$$.openssl.err.XXXXXX`"
 # file to store the CSR
-SERVER_CSR="`mktemp -t le.$$.server.csr.XXXXXX`"
+TMP_SERVER_CSR="`mktemp -t le.$$.server.csr.XXXXXX`"
 
 CA="https://acme-staging.api.letsencrypt.org"
 
@@ -79,6 +79,9 @@ ACCOUNT_THUMB=
 
 # the private key, which should be signed by the CA
 SERVER_KEY=
+
+# the certificate signing request, which sould be used
+SERVER_CSR=
 
 # the location, where the certificate should be stored
 SERVER_CERT=
@@ -219,7 +222,6 @@ key_get_exponent(){
         | base64url
 }
 
-
 # make a request to the specified URI
 # the payload is signed by the ACCOUNT_KEY
 # the response header is stored in the file $RESP_HEADER, the body in the file $RESP_BODY
@@ -273,6 +275,10 @@ request_challenge_domain(){
         DOMAIN_URI="`echo "$DOMAIN_CHALLENGE" | sed 's/.*"uri":"\([^"]*\)".*/\1/'`"
 
         DOMAIN_DATA="$DOMAIN_DATA $DOMAIN $DOMAIN_URI $DOMAIN_TOKEN"
+    elif check_http_status 400; then
+        # account not registred?
+        show_error "requesting challenge for $DOMAIN"
+        exit 1
     elif check_http_status 403; then
         # account not registred?
         show_error "requesting challenge for $DOMAIN"
@@ -412,9 +418,21 @@ gen_csr_with_private_key() {
 
 
     openssl req -new -sha512 -key "$SERVER_KEY" -subj / -reqexts SAN -config $OPENSSL_CONFIG \
-        > "$SERVER_CSR" \
+        > "$TMP_SERVER_CSR" \
         2> "$OPENSSL_ERR"
     handle_openssl_exit $? "creating certifacte request"
+}
+
+csr_extract_domains() {
+    log extract domains from CSR
+
+    openssl req -in "$SERVER_CSR" -noout -text \
+        > "$OPENSSL_OUT" \
+        2> "$OPENSSL_ERR"
+    handle_openssl_exit $? "creating certifacte request"
+
+    DOMAINS="`sed -n '/X509v3 Subject Alternative Name:/ { n; s/^\s*DNS\s*:\s*//; s/\s*,\s*DNS\s*:\s*/ /g; p; q; }' "$OPENSSL_OUT"`"
+
 }
 
 gen_csr() {
@@ -422,12 +440,17 @@ gen_csr() {
 }
 
 request_certificate(){
-    gen_csr
+    if [ -z "$SERVER_CSR" ]; then
+        gen_csr
+        USE_SERVER_CSR="$TMP_SERVER_CSR"
+    else
+        USE_SERVER_CSR="$SERVER_CSR"
+    fi
 
     log request certificate
 
     NEW_CERT="`
-            sed -e 's/-----BEGIN CERTIFICATE REQUEST-----/{"resource":"new-cert","csr":"/; s/-----END CERTIFICATE REQUEST-----/"}/;s/+/-/g;s!/!_!g;s/=//g' "$SERVER_CSR" \
+            sed -e 's/-----BEGIN CERTIFICATE REQUEST-----/{"resource":"new-cert","csr":"/; s/-----END CERTIFICATE REQUEST-----/"}/;s/+/-/g;s!/!_!g;s/=//g' "$USE_SERVER_CSR" \
             | tr -d '\r\n' \
     `"
 
@@ -447,27 +470,38 @@ request_certificate(){
 
 usage() {
     cat << EOT
-letsencrypt.sh [-q] -a account_key [-n -e email] -k server_key -c signed_key domain ...
-letsencrypt.sh -p plain|nginx -a account_key
+letsencrypt.sh [-q] -a account_key [-n -e email]
+    -k server_key -c signed_crt domain ...
+
+letsencrypt.sh [-q] -a account_key [-n -e email]
+    -r server_csr -c signed_crt
+
+letsencrypt.sh -a account_key -p plain|nginx
+
     -q                quiet operation
     -a account_key    the private key
     -n                register the account key at the service
-    -e email          the email address assigned to the account key during the registration
+    -e email          the email address assigned to the account key during
+                      the registration
     -k server_key     the privat key of the server certificate
-    -c signed_key     the location where to store the signed key
-    -p format         print the thumbprint of the account key or a sample configuration
+    -r server_csr     a certificate signing request, which includes the
+                      domains, use e.g. gen-csr.sh to create one
+    -c signed_crt     the location where to store the signed certificate
+    -p format         print the thumbprint of the account key or a sample
+                      configuration
 EOT
 }
 
 DO_REGISTER=
 PRINT_THUMB=
 
-while getopts hqa:nk:c:rp:e: name; do
+while getopts hqa:nk:c:r:p:e: name; do
     case "$name" in
         h) usage; exit;;
         q) QUIET=1;;
         a) ACCOUNT_KEY="$OPTARG";;
         k) SERVER_KEY="$OPTARG";;
+        r) SERVER_CSR="$OPTARG";;
         c) SERVER_CERT="$OPTARG";;
         n) DO_REGISTER=1;;
         e) ACCOUNT_EMAIL="$OPTARG";;
@@ -515,33 +549,54 @@ HERE
     esac
 fi
 
-if [ -z "$SERVER_KEY" ]; then
-    echo no server key specified > /dev/stderr
+if [ -z "$SERVER_KEY" -a -z "$SERVER_CSR" ]; then
+    echo error: neither server key nor server csr specified > /dev/stderr
+    exit 1
+fi
+
+if [ -n "$SERVER_KEY" -a -n "$SERVER_CSR" ]; then
+    echo error: server key and server csr specified, only need one > /dev/stderr
     exit 1
 fi
 
 if [ -z "$SERVER_CERT" ]; then
-    echo no server certificate specified > /dev/stderr
+    echo error: no server certificate specified > /dev/stderr
     exit 1
 fi
 
-if [ '!' -r "$SERVER_KEY" ]; then
-    echo could not read server key > /dev/stderr
+if [ -n "$SERVER_KEY" -a '!' -r "$SERVER_KEY" ]; then
+    echo error: could not read server key > /dev/stderr
     exit 1
 fi
 
-if [ -z "$1" ]; then
-    echo "need at least on domain" > /dev/stderr
+if [ -n "$SERVER_CSR" -a '!' -r "$SERVER_CSR" ]; then
+    echo error: could not read server csr > /dev/stderr
     exit 1
 fi
 
-DOMAINS=$1
-shift
+if [ -n "$SERVER_KEY" -a "$#" -eq 0 ]; then
+    echo "error: need at least on domain" > /dev/stderr
+    exit 1
+fi
 
-while [ -n "$1" ]; do
-    DOMAINS="$DOMAINS $1"
+if [ -n "$SERVER_CSR" -a "$#" -gt 0 ]; then
+    echo "error: no domain needed" > /dev/stderr
+    exit 1
+fi
+
+if [ -n "$SERVER_KEY" ]; then
+    DOMAINS=$1
     shift
-done
+
+    while [ -n "$1" ]; do
+        DOMAINS="$DOMAINS $1"
+        shift
+    done
+elif [ -n "$SERVER_CSR" ]; then
+    csr_extract_domains
+else
+    echo "error: this point should not be reached" > /dev/stderr
+fi
 
 if [ -n "$DO_REGISTER" ]; then
     if [ -z "$ACCOUNT_EMAIL" ]; then
