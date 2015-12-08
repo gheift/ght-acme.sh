@@ -450,8 +450,8 @@ request_certificate(){
 
 usage() {
     cat << EOT
-letsencrypt [-q] -a account_key [-n -e email] -k server_key -c signed_key domain ...
-letsencrypt -p plain|nginx -a account_key
+letsencrypt.sh [-q] -a account_key [-n -e email] -k server_key -c signed_key domain ...
+letsencrypt.sh -p plain|nginx -a account_key
     -q                quiet operation
     -a account_key    the private key
     -n                register the account key at the service
