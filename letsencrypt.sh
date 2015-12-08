@@ -49,7 +49,7 @@ CA="https://acme-staging.api.letsencrypt.org"
 CA="https://acme-v01.api.letsencrypt.org"
 
 base64url() {
-    base64 | tr '+/' '-_' | tr -d '\r\n='
+    openssl base64 | tr '+/' '-_' | tr -d '\r\n='
 }
 
 # global variables:
