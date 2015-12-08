@@ -38,8 +38,15 @@ OPENSSL_ERR="`mktemp -t le.$$.openssl.err.XXXXXX`"
 # file to store the CSR
 SERVER_CSR="`mktemp -t le.$$.server.csr.XXXXXX`"
 
+CA="https://acme-staging.api.letsencrypt.org"
+
+# Prefix the following line with "# letsencrypt-production-server #", to use
+# the staging server of letsencrypt. The staging server has lower rate limits,
+# but does not issue valid certificates. To automatically remove the comment
+# again on commiting the file, add the filter to your git config by running
+#   git config filter.production-server.clean misc/filter-production-server
+
 CA="https://acme-v01.api.letsencrypt.org"
-# CA="https://acme-staging.api.letsencrypt.org"
 
 base64url() {
     base64 | tr '+/' '-_' | tr -d '\r\n='

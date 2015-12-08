@@ -1,0 +1,4 @@
+# This filter removes the comment '# letsencrypt-production-server #' at the
+# start of each line. To enable it run
+#   git config filter.production-server.clean misc/filter-production-server
+/letsencrypt.sh filter=production-server

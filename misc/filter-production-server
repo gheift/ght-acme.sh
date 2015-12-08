@@ -1,0 +1,6 @@
+#!/bin/sh
+
+# for development reasons the staging server of letsencrypt is used
+# this script enables the production server on commit
+
+sed -e 's/^\s*#\s*letsencrypt-production-server\s*#\s*//'
