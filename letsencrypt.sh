@@ -19,7 +19,7 @@
 
 # temporary files to store input/output of curl or openssl
 
-trap 'rm -f "$RESP_HEADER" "$RESP_BODY" "$LAST_NONCE" "$LAST_NONCE_FETCH" "$OPENSSL_CONFIG" "$OPENSSL_IN" "$OPENSSL_OUT" "$OPENSSL_ERR"' 0 2 3 9 11 13 15
+trap 'rm -f "$RESP_HEADER" "$RESP_BODY" "$LAST_NONCE" "$LAST_NONCE_FETCH" "$OPENSSL_CONFIG" "$OPENSSL_IN" "$OPENSSL_OUT" "$OPENSSL_ERR" "$SERVER_CSR"' 0 2 3 9 11 13 15
 
 # file to store header of http request
 RESP_HEADER="`mktemp -t le.$$.resp-header.XXXXXX`"
@@ -35,6 +35,8 @@ OPENSSL_CONFIG="`mktemp -t le.$$.openssl.cnf.XXXXXX`"
 OPENSSL_IN="`mktemp -t le.$$.openssl.in.XXXXXX`"
 OPENSSL_OUT="`mktemp -t le.$$.openssl.out.XXXXXX`"
 OPENSSL_ERR="`mktemp -t le.$$.openssl.err.XXXXXX`"
+# file to store the CSR
+SERVER_CSR="`mktemp -t le.$$.server.csr.XXXXXX`"
 
 CA="https://acme-v01.api.letsencrypt.org"
 # CA="https://acme-staging.api.letsencrypt.org"
@@ -385,8 +387,10 @@ check_verification() {
     fi
 }
 
-request_certificate(){
-    log request certificate
+# this function generates the csr from the private server key and list of domains
+
+gen_csr_with_private_key() {
+    log generate certificate request
 
     set -- $DOMAINS
 
@@ -404,12 +408,22 @@ request_certificate(){
 
 
     openssl req -new -sha512 -key "$SERVER_KEY" -subj / -reqexts SAN -config $OPENSSL_CONFIG \
-        > "$OPENSSL_OUT" \
+        > "$SERVER_CSR" \
         2> "$OPENSSL_ERR"
     handle_openssl_exit $? "creating certifacte request"
+}
+
+gen_csr() {
+    gen_csr_with_private_key
+}
+
+request_certificate(){
+    gen_csr
+
+    log request certificate
 
     NEW_CERT="`
-            sed -e 's/-----BEGIN CERTIFICATE REQUEST-----/{"resource":"new-cert","csr":"/; s/-----END CERTIFICATE REQUEST-----/"}/;s/+/-/g;s!/!_!g;s/=//g' "$OPENSSL_OUT" \
+            sed -e 's/-----BEGIN CERTIFICATE REQUEST-----/{"resource":"new-cert","csr":"/; s/-----END CERTIFICATE REQUEST-----/"}/;s/+/-/g;s!/!_!g;s/=//g' "$SERVER_CSR" \
             | tr -d '\r\n' \
     `"
 
