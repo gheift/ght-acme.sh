@@ -22,19 +22,19 @@
 trap 'rm -f "$RESP_HEADER" "$RESP_BODY" "$LAST_NONCE" "$LAST_NONCE_FETCH" "$OPENSSL_CONFIG" "$OPENSSL_IN" "$OPENSSL_OUT" "$OPENSSL_ERR"' 0 2 3 9 11 13 15
 
 # file to store header of http request
-RESP_HEADER="`mktemp`"
+RESP_HEADER="`mktemp -t le.$$.resp-header.XXXXXX`"
 # file to store body of http request
-RESP_BODY="`mktemp`"
+RESP_BODY="`mktemp -t le.$$.resp-body.XXXXXX`"
 # file with Replay-Nonce header of last request
-LAST_NONCE="`mktemp`"
+LAST_NONCE="`mktemp -t le.$$.nonce.XXXXXX`"
 # tmp file for new Replay-Nonce header
-LAST_NONCE_FETCH="`mktemp`"
+LAST_NONCE_FETCH="`mktemp -t le.$$.nonce-fetch.XXXXXX`"
 # tmp config for openssl for addional domains
-OPENSSL_CONFIG="`mktemp`"
+OPENSSL_CONFIG="`mktemp -t le.$$.openssl.cnf.XXXXXX`"
 # file to store openssl output
-OPENSSL_IN="`mktemp`"
-OPENSSL_OUT="`mktemp`"
-OPENSSL_ERR="`mktemp`"
+OPENSSL_IN="`mktemp -t le.$$.openssl.in.XXXXXX`"
+OPENSSL_OUT="`mktemp -t le.$$.openssl.out.XXXXXX`"
+OPENSSL_ERR="`mktemp -t le.$$.openssl.err.XXXXXX`"
 
 CA="https://acme-v01.api.letsencrypt.org"
 # CA="https://acme-staging.api.letsencrypt.org"
