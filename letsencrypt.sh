@@ -201,13 +201,10 @@ gen_signature() {
 # helper functions to create the json web key object
 
 key_get_modulus(){
-    openssl pkey -inform perm -in "$1" -noout -text_pub > "$OPENSSL_OUT" 2> "$OPENSSL_ERR"
+    openssl rsa -in "$1" -modulus -noout > "$OPENSSL_OUT" 2> "$OPENSSL_ERR"
     handle_openssl_exit $? "extracting account key modulus"
 
-    sed -e '/^----/d; /^Public-Key:/ d; /^Modulus/ d; /Exponent: / d; s/[ :]//g' \
-        < "$OPENSSL_OUT" \
-        | tr -d '\r\n' \
-        | sed 's/^\(00\)*//' \
+    sed -e 's/^Modulus=//' < "$OPENSSL_OUT" \
         | xxd -r -p \
         | base64url
 }
