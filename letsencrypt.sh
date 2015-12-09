@@ -266,6 +266,20 @@ send_req(){
     sed -e '/Replay-Nonce: / ! d; s/^Replay-Nonce: //' "$RESP_HEADER" | tr -d '\r\n' > "$LAST_NONCE"
 }
 
+# account key handling
+
+load_account_key(){
+    [ -n "$ACCOUNT_KEY" ] || die "no account key specified"
+    [ -r "$ACCOUNT_KEY" ] || die "could not read account key"
+
+    openssl rsa -in "$ACCOUNT_KEY" -noout > "$OPENSSL_OUT" 2> "$OPENSSL_ERR"
+    handle_openssl_exit $? "opening account key"
+
+    ACCOUNT_JWK='{"e":"'"`key_get_exponent $ACCOUNT_KEY`"'","kty":"RSA","n":"'"`key_get_modulus $ACCOUNT_KEY`"'"}'
+    REQ_JWKS='{"alg":"RS256","jwk":'"$ACCOUNT_JWK"'}'
+    ACCOUNT_THUMB="`echo "$ACCOUNT_JWK" | tr -d '\r\n' | openssl dgst -sha256 -binary | base64url`"
+}
+
 register_account_key(){
     log "register account"
 
@@ -568,9 +582,7 @@ fi
 
 # generate JWK and JWK thumbprint
 
-ACCOUNT_JWK='{"e":"'"`key_get_exponent $ACCOUNT_KEY`"'","kty":"RSA","n":"'"`key_get_modulus $ACCOUNT_KEY`"'"}'
-REQ_JWKS='{"alg":"RS256","jwk":'"$ACCOUNT_JWK"'}'
-ACCOUNT_THUMB="`echo "$ACCOUNT_JWK" | tr -d '\r\n' | openssl dgst -sha256 -binary | base64url`"
+load_account_key
 
 case "$ACTION" in
     show_thumbprint)
