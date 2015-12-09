@@ -280,7 +280,7 @@ register_account_key(){
 
 
 request_challenge_domain(){
-    log request challenge for $DOMAIN
+    log "request challenge for $DOMAIN"
 
     NEW_AUTHZ='{"resource":"new-authz","identifier":{"type":"dns","value":"'"$DOMAIN"'"}}'
     send_req "$CA/acme/new-authz" "$NEW_AUTHZ"
@@ -312,7 +312,7 @@ request_challenge(){
 }
 
 push_domain_response() {
-    log push response for $DOMAIN
+    log "push response for $DOMAIN"
 
     # do something with DOMAIN, DOMAIN_TOKEN and DOMAIN_RESPONSE
     # echo "$DOMAIN_RESPONSE" > "/writeable/location/$DOMAIN/$DOMAIN_TOKEN"
@@ -321,7 +321,7 @@ push_domain_response() {
 }
 
 remove_domain_response() {
-    log remove response for $DOMAIN
+    log "remove response for $DOMAIN"
 
     # do something with DOMAIN and DOMAIN_TOKEN
     # rm "/writeable/location/$DOMAIN/$DOMAIN_TOKEN"
