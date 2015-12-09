@@ -106,6 +106,21 @@ log() {
     fi
 }
 
+validate_domain() {
+    DOMAIN_IN="$1"
+    if [ "$DOMAIN_IN" = _ ]; then
+        return 1
+    fi
+
+    DOMAIN_OUT="`printf "%s\n" "$DOMAIN_IN" | sed -e 's/^...$/!/; s/^.\{254,\}$/!/; s/^\([a-zA-Z0-9]\([-a-zA-Z0-9]\{0,61\}[a-zA-Z0-9]\)\?\.\)\+[a-zA-Z]\{2,63\}$/_/;'`"
+
+    if [ "$DOMAIN_OUT" = _ ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 handle_curl_exit() {
     CURL_EXIT="$1"
     CURL_URI="$2"
@@ -597,13 +612,16 @@ if [ -n "$SERVER_CSR" -a "$#" -gt 0 ]; then
 fi
 
 if [ -n "$SERVER_KEY" ]; then
-    DOMAINS=$1
-    shift
-
     while [ -n "$1" ]; do
-        DOMAINS="$DOMAINS $1"
+        DOMAIN="$1"
+        if validate_domain "$DOMAIN"; then true; else
+            echo invalid domain: $DOMAIN > /dev/stderr
+            exit 1
+        fi
+        DOMAINS="$DOMAINS $DOMAIN"
         shift
     done
+    DOMAINS="`printf "%s" "$DOMAINS" | tr A-Z a-z`"
 elif [ -n "$SERVER_CSR" ]; then
     csr_extract_domains
 else
