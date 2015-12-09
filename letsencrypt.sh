@@ -48,10 +48,6 @@ CA="https://acme-staging.api.letsencrypt.org"
 
 CA="https://acme-v01.api.letsencrypt.org"
 
-base64url() {
-    openssl base64 | tr '+/' '-_' | tr -d '\r\n='
-}
-
 # global variables:
 
 # base64url encoded JSON nonce, generated from Replay-Nonce header
@@ -100,6 +96,16 @@ QUIET=
 
 # utility functions
 
+base64url() {
+    openssl base64 | tr '+/' '-_' | tr -d '\r\n='
+}
+
+log() {
+    if [ -z "$QUIET" ]; then
+        echo "$@" > /dev/stderr
+    fi
+}
+
 handle_curl_exit() {
     CURL_EXIT="$1"
     CURL_URI="$2"
@@ -117,12 +123,6 @@ handle_curl_exit() {
         esac
 
         exit 1
-    fi
-}
-
-log() {
-    if [ -z "$QUIET" ]; then
-        echo "$@" > /dev/stderr
     fi
 }
 
