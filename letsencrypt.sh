@@ -299,7 +299,7 @@ push_domain_response() {
     log push response for $DOMAIN
 
     # do something with DOMAIN, DOMAIN_TOKEN and DOMAIN_RESPONSE
-    # echo "$DOMAIN_RESPONSE" > "/srv/www/$DOMAIN/.well-known/acme-challenge/$DOMAIN_TOKEN"
+    # echo "$DOMAIN_RESPONSE" > "/writeable/location/$DOMAIN/$DOMAIN_TOKEN"
 
     return
 }
