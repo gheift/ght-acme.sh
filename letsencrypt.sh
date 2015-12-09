@@ -267,7 +267,7 @@ send_req(){
 }
 
 register_account_key(){
-    log register account
+    log "register account"
 
     NEW_REG='{"resource":"new-reg","contact":["mailto:'"$ACCOUNT_EMAIL"'"],"agreement":"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf"}'
     send_req "$CA/acme/new-reg" "$NEW_REG"
