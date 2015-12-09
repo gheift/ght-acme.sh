@@ -19,7 +19,7 @@ create an account key:
 
 register the account key to the letsencrypt service
 
-`# ./letsencrypt.sh -n -a account.key -e webmaster@example.org`
+`# ./letsencrypt.sh register -a account.key -e webmaster@example.org`
 
 ## Setup Challenge Response
 
@@ -32,7 +32,7 @@ must be stored at a well known location.
 
 The thumbprint of the private account key can be obtained with this command:
 
-`# ./letsencrypt.sh -p -a account.key`
+`# ./letsencrypt.sh thumbprint -a account.key`
 
 With this thumbprint nginx can be configured to create a valid response
 dynamicly. The following configuration must be added to the server section of
@@ -55,7 +55,7 @@ connection. Do not forget to reload the configuration.
 When every domain for which the certificate should be used is setup,
 the signing of the certifcate can be requested:
 
-`# /.letsencrypt.sh -a account.key -k server.key -c server.pem www.example.org www1.example.org example.org`
+`# /.letsencrypt.sh sign -a account.key -k server.key -c server.pem www.example.org www1.example.org example.org`
 
 If the script runs successfully the signed certificate is stored in the file
 server.pem and can be used with the server. Please note that the file only
@@ -66,4 +66,4 @@ be needed by some servers.
 
 This is done like the first signing request:
 
-`# /.letsencrypt.sh -a account.key -k server.key -c server.pem www.example.org www1.example.org example.org`
+`# /.letsencrypt.sh sign account.key -k server.key -c server.pem www.example.org www1.example.org example.org`

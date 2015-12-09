@@ -479,7 +479,7 @@ gen_csr_with_private_key() {
 csr_extract_domains() {
     log "extract domains from certificate signing request"
 
-    openssl req -in "$SERVER_CSR" -noout -text \
+    openssl req -in "$TMP_SERVER_CSR" -noout -text \
         > "$OPENSSL_OUT" \
         2> "$OPENSSL_ERR"
     handle_openssl_exit $? "reading certifacte signing request"
@@ -492,17 +492,11 @@ gen_csr() {
 }
 
 request_certificate(){
-    if [ -z "$SERVER_CSR" ]; then
-        gen_csr
-        USE_SERVER_CSR="$TMP_SERVER_CSR"
-    else
-        USE_SERVER_CSR="$SERVER_CSR"
-    fi
-
     log request certificate
 
     NEW_CERT="`
-            sed -e 's/-----BEGIN CERTIFICATE REQUEST-----/{"resource":"new-cert","csr":"/; s/-----END CERTIFICATE REQUEST-----/"}/;s/+/-/g;s!/!_!g;s/=//g' "$USE_SERVER_CSR" \
+            sed -e 's/-----BEGIN CERTIFICATE REQUEST-----/{"resource":"new-cert","csr":"/; s/-----END CERTIFICATE REQUEST-----/"}/;s/+/-/g;s!/!_!g;s/=//g' \
+                "$TMP_SERVER_CSR" \
             | tr -d '\r\n' \
     `"
 
@@ -522,139 +516,134 @@ request_certificate(){
 
 usage() {
     cat << EOT
-letsencrypt.sh [-q] -a account_key [-n -e email]
-letsencrypt.sh -a account_key -p
-letsencrypt.sh [-q] -a account_key -k server_key -c signed_crt domain ...
-letsencrypt.sh [-q] -a account_key -r server_csr -c signed_crt
+letsencrypt.sh register [-p] -a account_key -e email
+letsencrypt.sh thumbprint -a account_key
+letsencrypt.sh sign -a account_key -k server_key -c signed_crt domain ...
+letsencrypt.sh sign -a account_key -r server_csr -c signed_crt
 
-    -q                quiet operation
     -a account_key    the private key
-    -n                register the account key at the service
     -e email          the email address assigned to the account key during
                       the registration
     -k server_key     the privat key of the server certificate
     -r server_csr     a certificate signing request, which includes the
                       domains, use e.g. gen-csr.sh to create one
     -c signed_crt     the location where to store the signed certificate
-    -p                print the thumbprint of the account key
+    -q                quiet operation
 
+  sign:
     -w webdir         the directory, where the response should be stored
                       $DOMAIN will be replaced by the actual domain
                       the directory will not be created
 EOT
 }
 
-ACTION=sign
+[ $# -gt 0 ] || die "no action given"
 
-while getopts hqa:nk:c:r:pe:w: name; do
-    case "$name" in
-        h) usage; exit;;
-        q) QUIET=1;;
-        a) ACCOUNT_KEY="$OPTARG";;
-        k) SERVER_KEY="$OPTARG";;
-        r) SERVER_CSR="$OPTARG";;
-        c) SERVER_CERT="$OPTARG";;
-        n) ACTION=register_account;;
-        e) ACCOUNT_EMAIL="$OPTARG";;
-        p) ACTION=show_thumbprint;;
-        w) WEBDIR="$OPTARG";;
-    esac
-done
+ACTION="$1"
+shift
+
+SHOW_THUMBPRINT=0
+
+case "$ACTION" in
+    register)
+        while getopts :hqa:e:p name; do case "$name" in
+            h) usage; exit 1;;
+            q) QUIET=1;;
+            p) SHOW_THUMBPRINT=1;;
+            a) ACCOUNT_KEY="$OPTARG";;
+            e) ACCOUNT_EMAIL="$OPTARG";;
+            ?|:) echo "invalid arguments" > /dev/stderr; exit 1;;
+        esac; done;;
+    thumbprint)
+        while getopts :hqa: name; do case "$name" in
+            h) usage; exit 1;;
+            q) QUIET=1;;
+            a) ACCOUNT_KEY="$OPTARG";;
+            ?|:) echo "invalid arguments" > /dev/stderr; exit 1;;
+        esac; done;;
+    sign)
+        while getopts :hqa:k:r:c:w: name; do case "$name" in
+            h) usage; exit 1;;
+            q) QUIET=1;;
+            a) ACCOUNT_KEY="$OPTARG";;
+            k)
+                if [ -n "$SERVER_CSR" ]; then
+                    echo "server key and server certificate signing request are mutual exclusive" > /dev/stderr
+                    exit 1
+                fi
+                SERVER_KEY="$OPTARG"
+                ACTION=sign-key
+                ;;
+            r)
+                if [ -n "$SERVER_KEY" ]; then
+                    echo "server key and server certificate signing request are mutual exclusive" > /dev/stderr
+                    exit 1
+                fi
+                SERVER_CSR="$OPTARG"
+                ACTION=sign-csr
+                ;;
+            c) SERVER_CERT="$OPTARG";;
+            w) WEBDIR="$OPTARG";;
+            ?|:) echo "invalid arguments" > /dev/stderr; exit 1;;
+        esac; done;;
+    -h|--help|-?)
+        usage
+        exit 1
+        ;;
+    *)
+        die "invalid action: $ACTION";;
+esac
 
 shift $(($OPTIND - 1))
 
-if [ -z "$ACCOUNT_KEY" ]; then
-    echo no account key specified > /dev/stderr
-    exit 1
-fi
-
-if [ '!' -r "$ACCOUNT_KEY" ]; then
-    echo could not read account key > /dev/stderr
-    exit 1
-fi
-
-# generate JWK and JWK thumbprint
-
-load_account_key
-
 case "$ACTION" in
-    show_thumbprint)
-        if [ "$#" -gt 0 -o -n "$SERVER_KEY" -o -n "$SERVER_CSR" -o -n "$SERVER_CERT" -o -n "$ACCOUNT_EMAIL" ]; then
-            echo "error: invalid arguments" > /dev/stderr
-            exit 1
-        fi
-
-        echo $ACCOUNT_THUMB
-        exit
-        ;;
-
-    register_account)
-        if [ "$#" -gt 0 -o -n "$SERVER_KEY" -o -n "$SERVER_CSR" -o -n "$SERVER_CERT" ]; then
-            echo "error: invalid arguments" > /dev/stderr
-            exit 1
-        fi
-
-        if [ -z "$ACCOUNT_EMAIL" ]; then
-            echo "error: no email address specified" > /dev/stderr
-            exit 1
-        fi
-
+    register)
+        load_account_key
+        [ -z "$ACCOUNT_EMAIL" ] && echo "account email address not given" > /dev/stderr && exit 1
         register_account_key
-        exit
+        [ $SHOW_THUMBPRINT -eq 1 ] && printf "account thumbprint: %s\n" "$ACCOUNT_THUMB"
+        exit;;
+
+    thumbprint)
+        load_account_key
+        printf "account thumbprint: %s\n" "$ACCOUNT_THUMB"
+        exit;;
+
+    sign) die "neither server key nor server csr given";;
+
+    sign-key)
+        load_account_key
+        [ -r "$SERVER_KEY" ] || die "could not read server key"
+        [ -n "$SERVER_CERT" ] || die "no output file given"
+
+        [ "$#" -gt 0 ] || die "domains needed"
         ;;
+
+    sign-csr)
+        load_account_key
+        [ -r "$SERVER_CSR" ] || die "could not read certificate signing request"
+        [ -n "$SERVER_CERT" ] || die "no output file given"
+
+        [ "$#" -eq 0 ] || die "no domains needed"
+
+        # load domains from csr
+        cat "$SERVER_CSR" > "$TMP_SERVER_CSR" || die "could not copy csr"
+        csr_extract_domains
+        ;;
+
+    *)
+        die "invalid action: $ACTION";;
 esac
 
-if [ -z "$SERVER_KEY" -a -z "$SERVER_CSR" ]; then
-    echo error: neither server key nor server csr specified > /dev/stderr
-    exit 1
-fi
+while [ "$#" -gt 0 ]; do
+    DOMAIN="$1"
+    validate_domain "$DOMAIN" || die "invalid domain: $DOMAIN"
+    DOMAINS="$DOMAINS $DOMAIN"
+    shift
+done
+DOMAINS="`printf "%s" "$DOMAINS" | tr A-Z a-z`"
 
-if [ -n "$SERVER_KEY" -a -n "$SERVER_CSR" ]; then
-    echo error: server key and server csr specified, only need one > /dev/stderr
-    exit 1
-fi
-
-if [ -z "$SERVER_CERT" ]; then
-    echo error: no server certificate specified > /dev/stderr
-    exit 1
-fi
-
-if [ -n "$SERVER_KEY" -a '!' -r "$SERVER_KEY" ]; then
-    echo error: could not read server key > /dev/stderr
-    exit 1
-fi
-
-if [ -n "$SERVER_CSR" -a '!' -r "$SERVER_CSR" ]; then
-    echo error: could not read server csr > /dev/stderr
-    exit 1
-fi
-
-if [ -n "$SERVER_KEY" -a "$#" -eq 0 ]; then
-    echo "error: need at least on domain" > /dev/stderr
-    exit 1
-fi
-
-if [ -n "$SERVER_CSR" -a "$#" -gt 0 ]; then
-    echo "error: no domain needed" > /dev/stderr
-    exit 1
-fi
-
-if [ -n "$SERVER_KEY" ]; then
-    while [ -n "$1" ]; do
-        DOMAIN="$1"
-        if validate_domain "$DOMAIN"; then true; else
-            echo invalid domain: $DOMAIN > /dev/stderr
-            exit 1
-        fi
-        DOMAINS="$DOMAINS $DOMAIN"
-        shift
-    done
-    DOMAINS="`printf "%s" "$DOMAINS" | tr A-Z a-z`"
-elif [ -n "$SERVER_CSR" ]; then
-    csr_extract_domains
-else
-    echo "error: this point should not be reached" > /dev/stderr
-fi
+[ "$ACTION" != "sign-csr" ] && gen_csr
 
 request_challenge
 push_response
