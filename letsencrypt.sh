@@ -251,7 +251,8 @@ register_account_key(){
     if check_http_status 201; then
         return
     elif check_http_status 409; then
-        echo "account exists, just continue" > /dev/stderr
+        echo "account already exists" > /dev/stderr
+        exit 1
     else
         unhandled_response "registering account"
     fi
@@ -482,12 +483,9 @@ request_certificate(){
 usage() {
     cat << EOT
 letsencrypt.sh [-q] -a account_key [-n -e email]
-    -k server_key -c signed_crt domain ...
-
-letsencrypt.sh [-q] -a account_key [-n -e email]
-    -r server_csr -c signed_crt
-
-letsencrypt.sh -a account_key -p plain|nginx
+letsencrypt.sh -a account_key -p
+letsencrypt.sh [-q] -a account_key -k server_key -c signed_crt domain ...
+letsencrypt.sh [-q] -a account_key -r server_csr -c signed_crt
 
     -q                quiet operation
     -a account_key    the private key
@@ -498,15 +496,13 @@ letsencrypt.sh -a account_key -p plain|nginx
     -r server_csr     a certificate signing request, which includes the
                       domains, use e.g. gen-csr.sh to create one
     -c signed_crt     the location where to store the signed certificate
-    -p format         print the thumbprint of the account key or a sample
-                      configuration
+    -p                print the thumbprint of the account key
 EOT
 }
 
-DO_REGISTER=
-PRINT_THUMB=
+ACTION=sign
 
-while getopts hqa:nk:c:r:p:e: name; do
+while getopts hqa:nk:c:r:pe: name; do
     case "$name" in
         h) usage; exit;;
         q) QUIET=1;;
@@ -514,9 +510,9 @@ while getopts hqa:nk:c:r:p:e: name; do
         k) SERVER_KEY="$OPTARG";;
         r) SERVER_CSR="$OPTARG";;
         c) SERVER_CERT="$OPTARG";;
-        n) DO_REGISTER=1;;
+        n) ACTION=register_account;;
         e) ACCOUNT_EMAIL="$OPTARG";;
-        p) PRINT_THUMB="$OPTARG";;
+        p) ACTION=show_thumbprint;;
     esac
 done
 
@@ -538,27 +534,32 @@ ACCOUNT_JWK='{"e":"'"`key_get_exponent $ACCOUNT_KEY`"'","kty":"RSA","n":"'"`key_
 REQ_JWKS='{"alg":"RS256","jwk":'"$ACCOUNT_JWK"'}'
 ACCOUNT_THUMB="`echo "$ACCOUNT_JWK" | tr -d '\r\n' | openssl dgst -sha256 -binary | base64url`"
 
-if [ -n "$PRINT_THUMB" ]; then
-    case "$PRINT_THUMB" in
-        plain)
-            echo $ACCOUNT_THUMB
-            exit
-            ;;
-        nginx)
-            cat <<"HERE" | sed "s/ACCOUNT_THUMB/$ACCOUNT_THUMB/g"
-location ~ "^/.well-known/acme-challenge/([-_a-zA-Z0-9]*)$" {
-    default_type text/plain;
-    return 200 "$1.ACCOUNT_THUMB";
-}
-HERE
-            exit
-            ;;
-        *)
-            echo unknown format > /dev/stderr
+case "$ACTION" in
+    show_thumbprint)
+        if [ "$#" -gt 0 -o -n "$SERVER_KEY" -o -n "$SERVER_CSR" -o -n "$SERVER_CERT" -o -n "$ACCOUNT_EMAIL" ]; then
+            echo "error: invalid arguments" > /dev/stderr
             exit 1
-            ;;
-    esac
-fi
+        fi
+
+        echo $ACCOUNT_THUMB
+        exit
+        ;;
+
+    register_account)
+        if [ "$#" -gt 0 -o -n "$SERVER_KEY" -o -n "$SERVER_CSR" -o -n "$SERVER_CERT" ]; then
+            echo "error: invalid arguments" > /dev/stderr
+            exit 1
+        fi
+
+        if [ -z "$ACCOUNT_EMAIL" ]; then
+            echo "error: no email address specified" > /dev/stderr
+            exit 1
+        fi
+
+        register_account_key
+        exit
+        ;;
+esac
 
 if [ -z "$SERVER_KEY" -a -z "$SERVER_CSR" ]; then
     echo error: neither server key nor server csr specified > /dev/stderr
@@ -607,15 +608,6 @@ elif [ -n "$SERVER_CSR" ]; then
     csr_extract_domains
 else
     echo "error: this point should not be reached" > /dev/stderr
-fi
-
-if [ -n "$DO_REGISTER" ]; then
-    if [ -z "$ACCOUNT_EMAIL" ]; then
-        echo need email address to register account key > /dev/stderr
-        exit 1
-    fi
-
-    register_account_key
 fi
 
 request_challenge
