@@ -110,6 +110,11 @@ log() {
     fi
 }
 
+die() {
+    [ -n "$1" ] && printf "%s\n" "$1" > /dev/stderr
+    exit 1
+}
+
 validate_domain() {
     DOMAIN_IN="$1"
     if [ "$DOMAIN_IN" = _ ]; then
