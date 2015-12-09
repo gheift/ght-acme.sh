@@ -483,7 +483,7 @@ gen_csr_with_private_key() {
 }
 
 csr_extract_domains() {
-    log extract domains from CSR
+    log "extract domains from certificate signing request"
 
     openssl req -in "$SERVER_CSR" -noout -text \
         > "$OPENSSL_OUT" \
