@@ -203,10 +203,7 @@ gen_protected(){
             > "$LAST_NONCE"
 
         NONCE="`cat "$LAST_NONCE"`"
-        if [ -z "$NONCE" ]; then
-            echo "nonce is empty?" > /dev/stderr
-            full_exit
-        fi
+        [ -n "$NONCE" ] || die "could not fetch new nonce"
     fi
 
     PROTECTED="`echo '{"nonce":"'"$NONCE"'"}' \
@@ -289,8 +286,7 @@ register_account_key(){
     if check_http_status 201; then
         return
     elif check_http_status 409; then
-        echo "account already exists" > /dev/stderr
-        exit 1
+        die "account already exists"
     else
         unhandled_response "registering account"
     fi
@@ -451,9 +447,7 @@ check_verification() {
         done
     done
 
-    if ! $ALL_VALID; then
-        exit 1
-    fi
+    $ALL_VALID || exit 1
 }
 
 # this function generates the csr from the private server key and list of domains
