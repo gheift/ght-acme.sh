@@ -47,6 +47,21 @@ base64url() {
     openssl base64 | tr '+/' '-_' | tr -d '\r\n='
 }
 
+validate_domain() {
+    DOMAIN_IN="$1"
+    if [ "$DOMAIN_IN" = _ ]; then
+        return 1
+    fi
+
+    DOMAIN_OUT="`printf "%s\n" "$DOMAIN_IN" | sed -e 's/^...$/!/; s/^.\{254,\}$/!/; s/^\([a-zA-Z0-9]\([-a-zA-Z0-9]\{0,61\}[a-zA-Z0-9]\)\?\.\)\+[a-zA-Z]\{2,63\}$/_/;'`"
+
+    if [ "$DOMAIN_OUT" = _ ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 handle_openssl_exit() {
     OPENSSL_EXIT=$1
     OPENSSL_ACTION=$2
@@ -130,13 +145,16 @@ if [ -z "$1" ]; then
     exit 1
 fi
 
-DOMAINS=$1
-shift
-
 while [ -n "$1" ]; do
-    DOMAINS="$DOMAINS $1"
+    DOMAIN="$1"
+    if validate_domain "$DOMAIN"; then true; else
+        echo invalid domain: $DOMAIN > /dev/stderr
+        exit 1
+    fi
+    DOMAINS="$DOMAINS $DOMAIN"
     shift
 done
+DOMAINS="`printf "%s" "$DOMAINS" | tr A-Z a-z`"
 
 # CSR will be stored in OPENSSL_OUT
 gen_csr_with_private_key
