@@ -304,6 +304,15 @@ push_domain_response() {
     return
 }
 
+remove_domain_response() {
+    log remove response for $DOMAIN
+
+    # do something with DOMAIN and DOMAIN_TOKEN
+    # rm "/writeable/location/$DOMAIN/$DOMAIN_TOKEN"
+
+    return
+}
+
 push_response() {
     set -- $DOMAIN_DATA
     while [ -n "$1" ]; do
@@ -371,10 +380,12 @@ check_verification() {
                 case "$DOMAIN_STATUS" in
                     valid)
                         log $DOMAIN is valid
+                        remove_domain_response
                         ;;
                     invalid)
                         echo $DOMAIN: invalid > /dev/stderr
                         show_error
+                        remove_domain_response
 
                         ALL_VALID=false
                         ;;
