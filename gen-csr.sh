@@ -92,10 +92,10 @@ gen_csr_with_private_key() {
 
 usage() {
     cat << EOT
-gen-csr.sh [-q] -k server_key [-r server_csr] domain ...
+gen-csr.sh [-q] -k server_key [-R server_csr] domain ...
     -q                quiet operation
     -k server_key     the privat key of the server certificate
-    -r server_csr     the location where to store the certificate request
+    -R server_csr     the location where to store the certificate request
                       if not specified, printed to stdout
                       if not writeable, printed to stderr
 EOT
@@ -104,12 +104,12 @@ EOT
 DO_REGISTER=
 PRINT_THUMB=
 
-while getopts hqk:r: name; do
+while getopts hqk:R: name; do
     case "$name" in
         h) usage; exit;;
         q) QUIET=1;;
         k) SERVER_KEY="$OPTARG";;
-        r) SERVER_CSR="$OPTARG";;
+        R) SERVER_CSR="$OPTARG";;
     esac
 done
 
