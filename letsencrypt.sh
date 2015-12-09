@@ -301,7 +301,6 @@ register_account_key(){
 #   key: the private key, which is used for the domains
 #   domain: a list of domains for which the certificate should be valid
 
-
 request_challenge_domain(){
     log "request challenge for $DOMAIN"
 
@@ -489,7 +488,7 @@ csr_extract_domains() {
     openssl req -in "$SERVER_CSR" -noout -text \
         > "$OPENSSL_OUT" \
         2> "$OPENSSL_ERR"
-    handle_openssl_exit $? "creating certifacte request"
+    handle_openssl_exit $? "reading certifacte signing request"
 
     DOMAINS="`sed -n '/X509v3 Subject Alternative Name:/ { n; s/^\s*DNS\s*:\s*//; s/\s*,\s*DNS\s*:\s*/ /g; p; q; }' "$OPENSSL_OUT"`"
 }
