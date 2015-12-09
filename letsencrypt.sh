@@ -459,7 +459,6 @@ csr_extract_domains() {
     handle_openssl_exit $? "creating certifacte request"
 
     DOMAINS="`sed -n '/X509v3 Subject Alternative Name:/ { n; s/^\s*DNS\s*:\s*//; s/\s*,\s*DNS\s*:\s*/ /g; p; q; }' "$OPENSSL_OUT"`"
-
 }
 
 gen_csr() {
