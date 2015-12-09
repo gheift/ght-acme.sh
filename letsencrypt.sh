@@ -92,6 +92,10 @@ DOMAINS=
 # a list of domains, challenge uri and token
 DOMAIN_DATA=
 
+# the directory, where to push the response
+# $DOMAIN or ${DOMAIN} will be replaced with the actual domain
+WEBDIR=
+
 QUIET=
 
 # utility functions
@@ -317,6 +321,11 @@ push_domain_response() {
     # do something with DOMAIN, DOMAIN_TOKEN and DOMAIN_RESPONSE
     # echo "$DOMAIN_RESPONSE" > "/writeable/location/$DOMAIN/$DOMAIN_TOKEN"
 
+    if [ -n "$WEBDIR" ]; then
+        TOKEN_DIR="`printf "%s" $WEBDIR | sed -e 's/\$DOMAIN/'"$DOMAIN"'/g; s/${DOMAIN}/'"$DOMAIN"'/g'`"
+        printf "%s\n" "$DOMAIN_RESPONSE" > "$TOKEN_DIR/$DOMAIN_TOKEN" || exit 1
+    fi
+
     return
 }
 
@@ -325,6 +334,11 @@ remove_domain_response() {
 
     # do something with DOMAIN and DOMAIN_TOKEN
     # rm "/writeable/location/$DOMAIN/$DOMAIN_TOKEN"
+
+    if [ -n "$WEBDIR" ]; then
+        TOKEN_DIR="`printf "%s" $WEBDIR | sed -e 's/\$DOMAIN/'"$DOMAIN"'/g; s/${DOMAIN}/'"$DOMAIN"'/g'`"
+        rm -f "$TOKEN_DIR/$DOMAIN_TOKEN"
+    fi
 
     return
 }
@@ -511,12 +525,16 @@ letsencrypt.sh [-q] -a account_key -r server_csr -c signed_crt
                       domains, use e.g. gen-csr.sh to create one
     -c signed_crt     the location where to store the signed certificate
     -p                print the thumbprint of the account key
+
+    -w webdir         the directory, where the response should be stored
+                      $DOMAIN will be replaced by the actual domain
+                      the directory will not be created
 EOT
 }
 
 ACTION=sign
 
-while getopts hqa:nk:c:r:pe: name; do
+while getopts hqa:nk:c:r:pe:w: name; do
     case "$name" in
         h) usage; exit;;
         q) QUIET=1;;
@@ -527,6 +545,7 @@ while getopts hqa:nk:c:r:pe: name; do
         n) ACTION=register_account;;
         e) ACCOUNT_EMAIL="$OPTARG";;
         p) ACTION=show_thumbprint;;
+        w) WEBDIR="$OPTARG";;
     esac
 done
 
