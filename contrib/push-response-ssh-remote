@@ -1,0 +1,49 @@
+#!/usr/bin/env sh
+
+# This value must be set to the output of
+# letsencrypt.sh thumbprint -a account.key
+
+# overwrite unusual splitting
+IFS=" "
+
+# set the following variable to one if you want to allow all thumbprints,
+# this is usualy a bad idea
+ALLOW_ALL_THUMBPRINTS=
+STATIC_THUMBPRINT=-czd2D9JHtyKgYUnPMTrUk6IqBwUQfc3bScUhJdad1c
+
+# verfication of configured thumbprint
+[ "x$ALLOW_ALL_THUMBPRINTS" = "x1" -o "x$STATIC_THUMBPRINT" = "x`printf '%s\n' "$STATIC_THUMBPRINT" | sed -e '/^[-_a-zA-Z0-9]\{43\}$/ ! d'`" ] || exit 1 
+
+if [ -n "$SSH_ORIGINAL_COMMAND" ]; then
+    [ "x$SSH_ORIGINAL_COMMAND" = "x`printf "%s\n" "$SSH_ORIGINAL_COMMAND" | sed -e 's/[^-_a-zA-Z0-9. ]*//'`" ] || exit 1
+    set -- $SSH_ORIGINAL_COMMAND
+fi
+
+[ "0$#" -eq 4 ] || exit 1
+
+ACTION="$1"
+DOMAIN="$2"
+TOKEN="$3"
+THUMBPRINT="$4"
+
+[ "x$ACTION"     = "xinstall" -o "x$ACTION" = "xremove" ] || exit 1
+[ "x$DOMAIN"     = "x`printf "%s\n" "$DOMAIN"     | sed -e '/^.\{4,253\}$/ ! d; /^\([a-zA-Z0-9]\([-a-zA-Z0-9]\{0,61\}[a-zA-Z0-9]\)\?\.\)\+[a-zA-Z]\{2,63\}$/ ! d;'`" ] || exit 1
+[ "x$TOKEN"      = "x`printf "%s\n" "$TOKEN"      | sed -e '/^[-_a-zA-Z0-9]*$/ ! d'`" ] || exit 1
+[ "x$THUMBPRINT" = "x`printf "%s\n" "$THUMBPRINT" | sed -e '/^[-_a-zA-Z0-9]\{43\}$/ ! d'`" ] || exit 1
+
+[ "x$ALLOW_ALL_THUMBPRINTS" = "x1" -o "x$THUMBPRINT" = "x$STATIC_THUMBPRINT" ] || exit 1
+
+# TOKEN_DIR="/var/www/$DOMAIN/.well-known/acme-challenge"
+TOKEN_DIR="/tmp"
+TOKEN_FILE="$TOKEN_DIR/$TOKEN"
+
+[ -d "$TOKEN_DIR" ] || exit 1
+
+if [ "x$ACTION" = "xinstall" ]; then
+    # install the token
+    printf "%s.%s\n" "$TOKEN" "$THUMBPRINT" > "$TOKEN_FILE" || exit 1
+elif [ "x$ACTION" = "xremove" ]; then
+    rm -f "$TOKEN_FILE"
+else
+    exit 1
+fi

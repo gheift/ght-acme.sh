@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+
+[ "0$#" -eq 4 ] || exit 1
+
+ACTION="$1"
+DOMAIN="$2"
+TOKEN="$3"
+RESPONSE="$4"
+
+[ "x$ACTION" = "xinstall" -o "x$ACTION" = "xremove" ] || exit 1
+[ "x$DOMAIN" = "x`printf "%s\n" "$DOMAIN" | sed -e '/^.\{4,253\}$/ ! d; /^\([a-zA-Z0-9]\([-a-zA-Z0-9]\{0,61\}[a-zA-Z0-9]\)\?\.\)\+[a-zA-Z]\{2,63\}$/ ! d;'`" ] || exit 1
+[ "x$TOKEN" = "x`printf "%s\n" "$TOKEN" | sed -e '/^[-_a-zA-Z0-9]*$/ ! d'`" ] || exit 1
+[ "x$RESPONSE" = "x`printf "%s\n" "$RESPONSE" | sed -e '/^[-_a-zA-Z0-9]*\.[-_a-zA-Z0-9]*$/ ! d'`" ] || exit 1
+
+# adjust code below
+
+case "$DOMAIN" in
+    example.com|www.example.com)
+        ssh -n -T -x -i push-token.key user@server "$ACTION" "$DOMAIN" "$TOKEN" "$RESPONSE" || exit 1
+        ;;
+    *)
+        exit 1
+        ;;
+esac
