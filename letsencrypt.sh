@@ -96,6 +96,9 @@ DOMAIN_DATA=
 # $DOMAIN or ${DOMAIN} will be replaced with the actual domain
 WEBDIR=
 
+# the script to be called to push the response to a remote server
+PUSH_TOKEN=
+
 QUIET=
 
 # utility functions
@@ -337,7 +340,9 @@ push_domain_response() {
 
     if [ -n "$WEBDIR" ]; then
         TOKEN_DIR="`printf "%s" $WEBDIR | sed -e 's/\$DOMAIN/'"$DOMAIN"'/g; s/${DOMAIN}/'"$DOMAIN"'/g'`"
-        printf "%s\n" "$DOMAIN_RESPONSE" > "$TOKEN_DIR/$DOMAIN_TOKEN" || exit 1
+        printf "%s.%s\n" "$DOMAIN_TOKEN.$ACCOUNT_THUMB" > "$TOKEN_DIR/$DOMAIN_TOKEN" || exit 1
+    elif [ -n "$PUSH_TOKEN" ]; then
+        $PUSH_TOKEN install "$DOMAIN" "$DOMAIN_TOKEN" "$ACCOUNT_THUMB" || die "could not install token for $DOMAIN"
     fi
 
     return
@@ -352,6 +357,8 @@ remove_domain_response() {
     if [ -n "$WEBDIR" ]; then
         TOKEN_DIR="`printf "%s" $WEBDIR | sed -e 's/\$DOMAIN/'"$DOMAIN"'/g; s/${DOMAIN}/'"$DOMAIN"'/g'`"
         rm -f "$TOKEN_DIR/$DOMAIN_TOKEN"
+    elif [ -n "$PUSH_TOKEN" ]; then
+        $PUSH_TOKEN remove "$DOMAIN" "$DOMAIN_TOKEN" "$ACCOUNT_THUMB" || exit 1
     fi
 
     return
@@ -365,8 +372,6 @@ push_response() {
         DOMAIN_TOKEN="$3"
 
         shift 3
-
-        DOMAIN_RESPONSE="$DOMAIN_TOKEN.$ACCOUNT_THUMB"
     
         push_domain_response
     done
@@ -534,6 +539,8 @@ letsencrypt.sh sign -a account_key -r server_csr -c signed_crt
     -w webdir         the directory, where the response should be stored
                       $DOMAIN will be replaced by the actual domain
                       the directory will not be created
+    -P exec           the command to call to install the token on a remote
+                      server
 EOT
 }
 
@@ -562,7 +569,7 @@ case "$ACTION" in
             ?|:) echo "invalid arguments" > /dev/stderr; exit 1;;
         esac; done;;
     sign)
-        while getopts :hqa:k:r:c:w: name; do case "$name" in
+        while getopts :hqa:k:r:c:w:P: name; do case "$name" in
             h) usage; exit 1;;
             q) QUIET=1;;
             a) ACCOUNT_KEY="$OPTARG";;
@@ -584,6 +591,7 @@ case "$ACTION" in
                 ;;
             c) SERVER_CERT="$OPTARG";;
             w) WEBDIR="$OPTARG";;
+            P) PUSH_TOKEN="$OPTARG";;
             ?|:) echo "invalid arguments" > /dev/stderr; exit 1;;
         esac; done;;
     -h|--help|-?)
