@@ -610,12 +610,12 @@ case "$ACTION" in
         [ -z "$ACCOUNT_EMAIL" ] && echo "account email address not given" > /dev/stderr && exit 1
         register_account_key
         [ $SHOW_THUMBPRINT -eq 1 ] && printf "account thumbprint: %s\n" "$ACCOUNT_THUMB"
-        exit;;
+        exit 0;;
 
     thumbprint)
         load_account_key
         printf "account thumbprint: %s\n" "$ACCOUNT_THUMB"
-        exit;;
+        exit 0;;
 
     sign) die "neither server key nor server csr given";;
 
