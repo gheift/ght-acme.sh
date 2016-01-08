@@ -15,7 +15,9 @@ following steps can be skipped.
 
 create an account key:
 
-`# openssl genrsa -out account.key 4096`
+`# umask 0177`  
+`# openssl genrsa -out account.key 4096`  
+`# umask 0022`
 
 register the account key to the letsencrypt service
 
