@@ -340,7 +340,7 @@ push_domain_response() {
 
     if [ -n "$WEBDIR" ]; then
         TOKEN_DIR="`printf "%s" $WEBDIR | sed -e 's/\$DOMAIN/'"$DOMAIN"'/g; s/${DOMAIN}/'"$DOMAIN"'/g'`"
-        printf "%s.%s\n" "$DOMAIN_TOKEN.$ACCOUNT_THUMB" > "$TOKEN_DIR/$DOMAIN_TOKEN" || exit 1
+        printf "%s\n" "$DOMAIN_TOKEN.$ACCOUNT_THUMB" > "$TOKEN_DIR/$DOMAIN_TOKEN" || exit 1
     elif [ -n "$PUSH_TOKEN" ]; then
         $PUSH_TOKEN install "$DOMAIN" "$DOMAIN_TOKEN" "$ACCOUNT_THUMB" || die "could not install token for $DOMAIN"
     fi
