@@ -39,7 +39,7 @@ dynamicly. The following configuration must be added to the server section of
 each domain to be validated:
 
 ```
-location ~ "^/\.well-known/acme-challenge/(-_a-zA-Z0-9]+)$" {
+location ~ "^/\.well-known/acme-challenge/([-_a-zA-Z0-9]+)$" {
     default_type text/plain;
     return 200 "$1.ACCOUNT_THUMBPRINT";
 }
@@ -55,7 +55,7 @@ connection. Do not forget to reload the configuration.
 When every domain for which the certificate should be used is setup,
 the signing of the certifcate can be requested:
 
-`# /.letsencrypt.sh sign -a account.key -k server.key -c server.pem www.example.org www1.example.org example.org`
+`# ./letsencrypt.sh sign -a account.key -k server.key -c server.pem www.example.org www1.example.org example.org`
 
 If the script runs successfully the signed certificate is stored in the file
 server.pem and can be used with the server. Please note that the file only
@@ -66,4 +66,4 @@ be needed by some servers.
 
 This is done like the first signing request:
 
-`# /.letsencrypt.sh sign account.key -k server.key -c server.pem www.example.org www1.example.org example.org`
+`# ./letsencrypt.sh sign account.key -k server.key -c server.pem www.example.org www1.example.org example.org`
