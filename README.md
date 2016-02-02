@@ -39,7 +39,7 @@ dynamically. The following configuration must be added to the server section of
 each domain to be validated:
 
 ```
-location ~ "^/\.well-known/acme-challenge/(-_a-zA-Z0-9]+)$" {
+location ~ "^/\.well-known/acme-challenge/([-_a-zA-Z0-9]*)$" {
     default_type text/plain;
     return 200 "$1.ACCOUNT_THUMBPRINT";
 }
