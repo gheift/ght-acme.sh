@@ -68,4 +68,4 @@ be needed by some servers.
 
 This is done like the first signing request:
 
-`# /.letsencrypt.sh sign account.key -k server.key -c server.pem www.example.org www1.example.org example.org`
+`# /.letsencrypt.sh sign -a account.key -k server.key -c server.pem www.example.org www1.example.org example.org`
