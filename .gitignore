@@ -2,3 +2,7 @@
 *.key
 *.pem
 *.csr
+
+*~
+*.swo
+*.swp
