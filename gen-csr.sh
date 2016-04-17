@@ -109,7 +109,7 @@ usage() {
     cat << EOT
 gen-csr.sh [-q] -k server_key [-R server_csr] domain ...
     -q                quiet operation
-    -k server_key     the privat key of the server certificate
+    -k server_key     the private key of the server certificate
     -R server_csr     the location where to store the certificate request
                       if not specified, printed to stdout
                       if not writeable, printed to stderr
