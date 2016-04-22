@@ -520,7 +520,7 @@ request_certificate(){
 }
 
 usage() {
-    cat << EOT
+    cat << 'EOT'
 letsencrypt.sh register [-p] -a account_key -e email
 letsencrypt.sh thumbprint -a account_key
 letsencrypt.sh sign -a account_key -k server_key -c signed_crt domain ...
