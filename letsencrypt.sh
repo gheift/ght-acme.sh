@@ -529,7 +529,7 @@ letsencrypt.sh sign -a account_key -r server_csr -c signed_crt
     -a account_key    the private key
     -e email          the email address assigned to the account key during
                       the registration
-    -k server_key     the privat key of the server certificate
+    -k server_key     the private key of the server certificate
     -r server_csr     a certificate signing request, which includes the
                       domains, use e.g. gen-csr.sh to create one
     -c signed_crt     the location where to store the signed certificate
