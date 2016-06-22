@@ -295,6 +295,19 @@ register_account_key(){
     fi
 }
 
+delete_account_key(){
+    log "delete account"
+
+    REG='{"resource":"reg","delete":"true"}'
+    send_req "$CA/acme/new-reg" "$REG"
+
+    if check_http_status 200; then
+        return
+    else
+        unhandled_response "deleting account"
+    fi
+}
+
 # This function returns the certificate request in base64url encoding
 # arguments: domain ...
 #   key: the private key, which is used for the domains
@@ -522,6 +535,7 @@ request_certificate(){
 usage() {
     cat << 'EOT'
 letsencrypt.sh register [-p] -a account_key -e email
+letsencrypt.sh delete -a account_key
 letsencrypt.sh thumbprint -a account_key
 letsencrypt.sh sign -a account_key -k server_key -c signed_crt domain ...
 letsencrypt.sh sign -a account_key -r server_csr -c signed_crt
@@ -552,6 +566,13 @@ shift
 SHOW_THUMBPRINT=0
 
 case "$ACTION" in
+    delete)
+        while getopts :hqa: name; do case "$name" in
+            h) usage; exit 1;;
+            q) QUIET=1;;
+            a) ACCOUNT_KEY="$OPTARG";;
+            ?|:) echo "invalid arguments" > /dev/stderr; exit 1;;
+        esac; done;;
     register)
         while getopts :hqa:e:p name; do case "$name" in
             h) usage; exit 1;;
@@ -605,6 +626,11 @@ esac
 shift $(($OPTIND - 1))
 
 case "$ACTION" in
+    delete)
+        load_account_key
+        delete_account_key
+        exit 0;;
+
     register)
         load_account_key
         [ -z "$ACCOUNT_EMAIL" ] && echo "account email address not given" > /dev/stderr && exit 1
