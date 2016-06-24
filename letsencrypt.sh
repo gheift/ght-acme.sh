@@ -99,6 +99,9 @@ WEBDIR=
 # the script to be called to push the response to a remote server
 PUSH_TOKEN=
 
+# the challenge type, can be dns-01 or http-01 (default)
+CHALLENGE_TYPE="http-01"
+
 QUIET=
 
 # utility functions
@@ -281,7 +284,6 @@ load_account_key(){
 }
 
 register_account_key(){
-    log "register account"
 
     NEW_REG='{"resource":"new-reg","contact":["mailto:'"$ACCOUNT_EMAIL"'"],"agreement":"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf"}'
     send_req "$CA/acme/new-reg" "$NEW_REG"
@@ -289,7 +291,7 @@ register_account_key(){
     if check_http_status 201; then
         return
     elif check_http_status 409; then
-        die "account already exists"
+        [ "$1" = "nodie" ] || die "account already exists"
     else
         unhandled_response "registering account"
     fi
@@ -299,7 +301,8 @@ delete_account_key(){
     log "delete account"
 
     REG='{"resource":"reg","delete":"true"}'
-    send_req "$CA/acme/new-reg" "$REG"
+#    send_req "$CA/acme/reg/" "$REG"
+    send_req "$REGISTRATION_URI" "$REG"
 
     if check_http_status 200; then
         return
@@ -320,9 +323,9 @@ request_challenge_domain(){
     send_req "$CA/acme/new-authz" "$NEW_AUTHZ"
 
     if check_http_status 201; then
-        DOMAIN_CHALLENGE="`sed -e '/"http-01"/ ! d; s/.*{\([^}]*"type":"http-01"[^}]*\)}.*/\1/' "$RESP_BODY"`"
-        DOMAIN_TOKEN="`echo "$DOMAIN_CHALLENGE" | sed 's/.*"token":"\([^"]*\)".*/\1/'`"
-        DOMAIN_URI="`echo "$DOMAIN_CHALLENGE" | sed 's/.*"uri":"\([^"]*\)".*/\1/'`"
+        DOMAIN_CHALLENGE="$(cat "$RESP_BODY" | tr -d ' \r\n' | sed -e '/"'"$CHALLENGE_TYPE"'"/ ! d; s/.*{\([^}]*"type":"'"$CHALLENGE_TYPE"'"[^}]*\)}.*/\1/')"
+        DOMAIN_TOKEN="$(echo "$DOMAIN_CHALLENGE" | sed 's/.*"token":"\([^"]*\)".*/\1/')"
+        DOMAIN_URI="$(echo "$DOMAIN_CHALLENGE" | sed 's/.*"uri":"\([^"]*\)".*/\1/')"
 
         DOMAIN_DATA="$DOMAIN_DATA $DOMAIN $DOMAIN_URI $DOMAIN_TOKEN"
     elif check_http_status 400; then
@@ -345,17 +348,34 @@ request_challenge(){
     done
 }
 
+domain_dns_challenge() {
+    DNS_CHALLENGE="`printf "%s\n" "$DOMAIN_TOKEN.$ACCOUNT_THUMB" | tr -d '\r\n' | openssl dgst -sha256 -binary | base64url`"
+    if [ -n "$PUSH_TOKEN" ]; then
+        $PUSH_TOKEN "$1" "$DOMAIN" "$DNS_CHALLENGE" || die "Could not $1 $CHALLENGE_TYPE type challenge token with value $DNS_CHALLENGE for domain $DOMAIN via $PUSH_TOKEN"
+    else
+        printf 'update %s _acme-challenge.%s. 300 IN TXT "%s"\n\n' "$1" "$DOMAIN" "$DNS_CHALLENGE" |
+            nsupdate || die "Could not $1 $CHALLENGE_TYPE type challenge token with value $DNS_CHALLENGE for domain $DOMAIN via nsupdate"
+    fi
+}
+
 push_domain_response() {
     log "push response for $DOMAIN"
 
     # do something with DOMAIN, DOMAIN_TOKEN and DOMAIN_RESPONSE
     # echo "$DOMAIN_RESPONSE" > "/writeable/location/$DOMAIN/$DOMAIN_TOKEN"
 
-    if [ -n "$WEBDIR" ]; then
-        TOKEN_DIR="`printf "%s" $WEBDIR | sed -e 's/\$DOMAIN/'"$DOMAIN"'/g; s/${DOMAIN}/'"$DOMAIN"'/g'`"
-        printf "%s\n" "$DOMAIN_TOKEN.$ACCOUNT_THUMB" > "$TOKEN_DIR/$DOMAIN_TOKEN" || exit 1
-    elif [ -n "$PUSH_TOKEN" ]; then
-        $PUSH_TOKEN install "$DOMAIN" "$DOMAIN_TOKEN" "$ACCOUNT_THUMB" || die "could not install token for $DOMAIN"
+    if [ "$CHALLENGE_TYPE" = "http-01" ]; then
+        if [ -n "$WEBDIR" ]; then
+            TOKEN_DIR="`printf "%s" $WEBDIR | sed -e 's/\$DOMAIN/'"$DOMAIN"'/g; s/${DOMAIN}/'"$DOMAIN"'/g'`"
+            printf "%s\n" "$DOMAIN_TOKEN.$ACCOUNT_THUMB" > "$TOKEN_DIR/$DOMAIN_TOKEN" || exit 1
+        elif [ -n "$PUSH_TOKEN" ]; then
+            $PUSH_TOKEN install "$DOMAIN" "$DOMAIN_TOKEN" "$ACCOUNT_THUMB" || die "could not install token for $DOMAIN"
+        fi
+    elif [ "$CHALLENGE_TYPE" = "dns-01" ]; then
+        domain_dns_challenge "add"
+    else
+        # May be tls-sni-02?
+        echo "unsupported challenge type for install (but in progress): $CHALLENGE_TYPE" > /dev/stderr; exit 1
     fi
 
     return
@@ -367,11 +387,18 @@ remove_domain_response() {
     # do something with DOMAIN and DOMAIN_TOKEN
     # rm "/writeable/location/$DOMAIN/$DOMAIN_TOKEN"
 
-    if [ -n "$WEBDIR" ]; then
-        TOKEN_DIR="`printf "%s" $WEBDIR | sed -e 's/\$DOMAIN/'"$DOMAIN"'/g; s/${DOMAIN}/'"$DOMAIN"'/g'`"
-        rm -f "$TOKEN_DIR/$DOMAIN_TOKEN"
-    elif [ -n "$PUSH_TOKEN" ]; then
-        $PUSH_TOKEN remove "$DOMAIN" "$DOMAIN_TOKEN" "$ACCOUNT_THUMB" || exit 1
+    if [ "$CHALLENGE_TYPE" = "http-01" ]; then
+        if [ -n "$WEBDIR" ]; then
+            TOKEN_DIR="`printf "%s" $WEBDIR | sed -e 's/\$DOMAIN/'"$DOMAIN"'/g; s/${DOMAIN}/'"$DOMAIN"'/g'`"
+            rm -f "$TOKEN_DIR/$DOMAIN_TOKEN"
+        elif [ -n "$PUSH_TOKEN" ]; then
+            $PUSH_TOKEN remove "$DOMAIN" "$DOMAIN_TOKEN" "$ACCOUNT_THUMB" || exit 1
+        fi
+    elif [ "$CHALLENGE_TYPE" = "dns-01" ]; then
+        domain_dns_challenge "delete"
+    else
+        # May be tls-sni-02?
+        echo "unsupported challenge type for remove (but in progress): $CHALLENGE_TYPE" > /dev/stderr; exit 1
     fi
 
     return
@@ -393,7 +420,7 @@ push_response() {
 request_domain_verification() {
     log request verification of $DOMAIN
 
-    send_req $DOMAIN_URI '{"resource":"challenge","type":"http-01","keyAuthorization":"'"$DOMAIN_TOKEN.$ACCOUNT_THUMB"'","token":"'"$DOMAIN_TOKEN"'"}'
+    send_req $DOMAIN_URI '{"resource":"challenge","type":"'"$CHALLENGE_TYPE"'","keyAuthorization":"'"$DOMAIN_TOKEN.$ACCOUNT_THUMB"'","token":"'"$DOMAIN_TOKEN"'"}'
 
     if check_http_status 202; then
         printf ""
@@ -503,6 +530,7 @@ csr_extract_domains() {
     handle_openssl_exit $? "reading certifacte signing request"
 
     DOMAINS="`sed -n '/X509v3 Subject Alternative Name:/ { n; s/^\s*DNS\s*:\s*//; s/\s*,\s*DNS\s*:\s*/ /g; p; q; }' "$OPENSSL_OUT"`"
+    # echo "$DOMAINS"; exit
 }
 
 gen_csr() {
@@ -547,6 +575,7 @@ letsencrypt.sh sign -a account_key -r server_csr -c signed_crt
     -r server_csr     a certificate signing request, which includes the
                       domains, use e.g. gen-csr.sh to create one
     -c signed_crt     the location where to store the signed certificate
+    -l challenge_type can be dns-01 or http-01 (default)
     -q                quiet operation
 
   sign:
@@ -590,7 +619,7 @@ case "$ACTION" in
             ?|:) echo "invalid arguments" > /dev/stderr; exit 1;;
         esac; done;;
     sign)
-        while getopts :hqa:k:r:c:w:P: name; do case "$name" in
+        while getopts :hqa:k:r:c:w:P:l: name; do case "$name" in
             h) usage; exit 1;;
             q) QUIET=1;;
             a) ACCOUNT_KEY="$OPTARG";;
@@ -613,6 +642,7 @@ case "$ACTION" in
             c) SERVER_CERT="$OPTARG";;
             w) WEBDIR="$OPTARG";;
             P) PUSH_TOKEN="$OPTARG";;
+            l) CHALLENGE_TYPE="$OPTARG";;
             ?|:) echo "invalid arguments" > /dev/stderr; exit 1;;
         esac; done;;
     -h|--help|-?)
@@ -625,15 +655,25 @@ esac
 
 shift $(($OPTIND - 1))
 
+case "$CHALLENGE_TYPE" in
+  http-01) ;;
+  dns-01)  ;;
+  tls-sni-02)  ;;
+  *) echo "unsupported challenge type: $CHALLENGE_TYPE" > /dev/stderr; exit 1;;
+esac
+
 case "$ACTION" in
     delete)
         load_account_key
+        register_account_key nodie
+        REGISTRATION_URI="`sed -e '/^Location: / ! d; s/Location: //' "$RESP_HEADER" | tr -d '\r\n'`"
         delete_account_key
         exit 0;;
 
     register)
         load_account_key
         [ -z "$ACCOUNT_EMAIL" ] && echo "account email address not given" > /dev/stderr && exit 1
+        log "register account"
         register_account_key
         [ $SHOW_THUMBPRINT -eq 1 ] && printf "account thumbprint: %s\n" "$ACCOUNT_THUMB"
         exit 0;;
