@@ -301,7 +301,6 @@ delete_account_key(){
     log "delete account"
 
     REG='{"resource":"reg","delete":"true"}'
-#    send_req "$CA/acme/reg/" "$REG"
     send_req "$REGISTRATION_URI" "$REG"
 
     if check_http_status 200; then
