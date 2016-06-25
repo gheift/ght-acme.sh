@@ -464,7 +464,7 @@ check_verification() {
             handle_curl_exit $? "$DOMAIN_URI"
         
             if check_http_status 202; then
-                DOMAIN_STATUS="`sed -e 's/.*"status":"\(invalid\|valid\|pending\)".*/\1/' "$RESP_BODY"`"
+                DOMAIN_STATUS="`tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"status":"\(invalid\|valid\|pending\)".*/\1/'`"
                 case "$DOMAIN_STATUS" in
                     valid)
                         log $DOMAIN is valid
