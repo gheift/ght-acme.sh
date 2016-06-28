@@ -509,7 +509,11 @@ gen_csr_with_private_key() {
         shift
     done
 
-    cat /etc/ssl/openssl.cnf > "$OPENSSL_CONFIG"
+    if [ -r /etc/ssl/openssl.cnf ]; then
+        cat /etc/ssl/openssl.cnf > "$OPENSSL_CONFIG"
+    else
+        cat /etc/pki/tls/openssl.cnf > "$OPENSSL_CONFIG"
+    fi
     echo '[SAN]' >> "$OPENSSL_CONFIG"
     echo "$ALT_NAME" >> "$OPENSSL_CONFIG"
 
