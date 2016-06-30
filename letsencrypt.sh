@@ -555,6 +555,14 @@ request_certificate(){
         openssl x509 -inform der -outform pem -in "$RESP_BODY" -out "$OPENSSL_OUT" 2> "$OPENSSL_ERR"
         handle_openssl_exit $? "converting certificate"
         cp -- "$OPENSSL_OUT" "$SERVER_CERT"
+        CA_CERT_URI="`sed -e '/^Link: <.*>.*;rel="up"/ ! d; s/^Link: <\(.*\)>.*;rel="up".*/\1/' "$RESP_HEADER"`"
+        if [ -n "$CA_CERT_URI" ]; then
+            curl -D "$RESP_HEADER" -o "$RESP_BODY" -s "$CA_CERT_URI"
+            handle_curl_exit $? "$CA_CERT_URI"
+            openssl x509 -inform der -outform pem -in "$RESP_BODY" -out "$OPENSSL_OUT" 2> "$OPENSSL_ERR"
+            handle_openssl_exit $? "converting issuing certificate"
+            cp -- "$OPENSSL_OUT" "$SERVER_CERT"_chain
+        fi
     elif check_http_status 429; then
         show_error "requesting certificate"
         exit 1
