@@ -240,10 +240,10 @@ key_get_modulus(){
 }
 
 key_get_exponent(){
-    openssl pkey -inform perm -in "$1" -noout -text_pub > "$OPENSSL_OUT" 2> "$OPENSSL_ERR"
+    openssl rsa -in "$1" -text -noout > "$OPENSSL_OUT" 2> "$OPENSSL_ERR"
     handle_openssl_exit $? "extracting account key exponent"
 
-    sed -e '/Exponent: / ! d; s/Exponent: [0-9]*\s\+(\(\(0\)x\([0-9]\)\|0x\)\(\([0-9][0-9]\)*\))/\2\3\4/' \
+    sed -e '/^publicExponent: / ! d; s/^publicExponent: [0-9]*\s\+(\(\(0\)x\([0-9]\)\|0x\)\(\([0-9][0-9]\)*\))/\2\3\4/' \
         < "$OPENSSL_OUT" \
         | xxd -r -p \
         | base64url
