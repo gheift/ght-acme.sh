@@ -55,5 +55,10 @@ AliasMatch "^/\.well-known/acme-challenge/" "/path/to/script/"
 
 The script only has to output the token concatenated with the account key thumbprint.
 
-`<? header('Content-Type: text/plain'); echo $_ENV['ACME_TOKEN'] ?>.THUMBPRINT`
+`<?php
+header('Content-Type: text/plain');
+if (!isset($_SERVER['REDIRECT_ACME_TOKEN'])) {
+	exit;
+}
+echo $_SERVER['REDIRECT_ACME_TOKEN'] ?>.THUMBPRINT`
 
