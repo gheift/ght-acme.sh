@@ -283,7 +283,7 @@ load_account_key(){
 register_account_key(){
     log "register account"
 
-    NEW_REG='{"resource":"new-reg","contact":["mailto:'"$ACCOUNT_EMAIL"'"],"agreement":"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf"}'
+    NEW_REG='{"resource":"new-reg","contact":["mailto:'"$ACCOUNT_EMAIL"'"],"agreement":"https://letsencrypt.org/documents/LE-SA-v1.1.1-August-1-2016.pdf"}'
     send_req "$CA/acme/new-reg" "$NEW_REG"
 
     if check_http_status 201; then
