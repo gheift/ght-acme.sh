@@ -262,7 +262,17 @@ send_req(){
 
     DATA='{"header":'"$REQ_JWKS"',"protected":"'"$PROTECTED"'","payload":"'"$PAYLOAD"'","signature":"'"$SIGNATURE"'"}'
 
-    curl -s -d "$DATA" -D "$RESP_HEADER" -o "$RESP_BODY" "$URI"
+    curl -s -D "$RESP_HEADER" -o "$RESP_BODY" -d "$DATA" "$URI"
+    handle_curl_exit $? "$URI"
+
+    # store the nonce for the next request
+    sed -e '/Replay-Nonce: / ! d; s/^Replay-Nonce: //' "$RESP_HEADER" | tr -d '\r\n' > "$LAST_NONCE"
+}
+
+send_get_req(){
+    URI="$1"
+
+    curl -s -D "$RESP_HEADER" -o "$RESP_BODY" "$URI"
     handle_curl_exit $? "$URI"
 
     # store the nonce for the next request
@@ -283,9 +293,16 @@ load_account_key(){
     ACCOUNT_THUMB="`echo "$ACCOUNT_JWK" | tr -d '\r\n' | openssl dgst -sha256 -binary | base64url`"
 }
 
+get_agreement_url(){
+    send_get_req "$CA/directory"
+
+    AGREEMENTURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"terms-of-service":"\([^"]*\)".*/\1/')"
+}
+
 register_account_key(){
 
-    NEW_REG='{"resource":"new-reg","contact":["mailto:'"$ACCOUNT_EMAIL"'"],"agreement":"https://letsencrypt.org/documents/LE-SA-v1.1.1-August-1-2016.pdf"}'
+    get_agreement_url
+    NEW_REG='{"resource":"new-reg","contact":["mailto:'"$ACCOUNT_EMAIL"'"],"agreement":"'"$AGREEMENTURL"'"}'
     send_req "$CA/acme/new-reg" "$NEW_REG"
 
     if check_http_status 201; then
@@ -597,6 +614,8 @@ letsencrypt.sh sign -a account_key -r server_csr -c signed_crt
                       server
 EOT
 }
+
+get_agreement_url
 
 [ $# -gt 0 ] || die "no action given"
 
