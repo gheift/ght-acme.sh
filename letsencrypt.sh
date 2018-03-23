@@ -615,8 +615,6 @@ letsencrypt.sh sign -a account_key -r server_csr -c signed_crt
 EOT
 }
 
-get_agreement_url
-
 [ $# -gt 0 ] || die "no action given"
 
 ACTION="$1"
