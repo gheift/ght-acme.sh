@@ -99,6 +99,9 @@ WEBDIR=
 # the script to be called to push the response to a remote server
 PUSH_TOKEN=
 
+# the script to be called to push the response to a remote server needs the commit feature
+PUSH_TOKEN_COMMIT=
+
 # the challenge type, can be dns-01 or http-01 (default)
 CHALLENGE_TYPE="http-01"
 
@@ -364,10 +367,17 @@ request_challenge(){
     done
 }
 
+domain_commit() {
+    if [ -n "$PUSH_TOKEN" ] && [ -n "$PUSH_TOKEN_COMMIT" ]; then
+        log "calling $PUSH_TOKEN commit"
+        $PUSH_TOKEN commit || die "$PUSH_TOKEN could not commit"
+    fi
+}
+
 domain_dns_challenge() {
     DNS_CHALLENGE="`printf "%s\n" "$DOMAIN_TOKEN.$ACCOUNT_THUMB" | tr -d '\r\n' | openssl dgst -sha256 -binary | base64url`"
     if [ -n "$PUSH_TOKEN" ]; then
-        $PUSH_TOKEN "$1" "$DOMAIN" "$DNS_CHALLENGE" || die "Could not $1 $CHALLENGE_TYPE type challenge token with value $DNS_CHALLENGE for domain $DOMAIN via $PUSH_TOKEN"
+        $PUSH_TOKEN "$1" _acme-challenge."$DOMAIN" "$DNS_CHALLENGE" || die "Could not $1 $CHALLENGE_TYPE type challenge token with value $DNS_CHALLENGE for domain $DOMAIN via $PUSH_TOKEN"
     else
         printf 'update %s _acme-challenge.%s. 300 IN TXT "%s"\n\n' "$1" "$DOMAIN" "$DNS_CHALLENGE" |
             nsupdate || die "Could not $1 $CHALLENGE_TYPE type challenge token with value $DNS_CHALLENGE for domain $DOMAIN via nsupdate"
@@ -431,6 +441,7 @@ push_response() {
     
         push_domain_response
     done
+    domain_commit
 }
 
 request_domain_verification() {
@@ -507,6 +518,7 @@ check_verification() {
             fi
         done
     done
+    domain_commit
 
     $ALL_VALID || exit 1
 }
@@ -612,6 +624,8 @@ letsencrypt.sh sign -a account_key -r server_csr -c signed_crt
                       the directory will not be created
     -P exec           the command to call to install the token on a remote
                       server
+    -C                the command to call to install the token on a remote
+                      server needs the commit feature
 EOT
 }
 
@@ -647,9 +661,10 @@ case "$ACTION" in
             ?|:) echo "invalid arguments" > /dev/stderr; exit 1;;
         esac; done;;
     sign)
-        while getopts :hqa:k:r:c:w:P:l: name; do case "$name" in
+        while getopts :hqCa:k:r:c:w:P:l: name; do case "$name" in
             h) usage; exit 1;;
             q) QUIET=1;;
+            C) PUSH_TOKEN_COMMIT=1;;
             a) ACCOUNT_KEY="$OPTARG";;
             k)
                 if [ -n "$SERVER_CSR" ]; then
