@@ -19,7 +19,7 @@
 
 # temporary files to store input/output of curl or openssl
 
-trap 'rm -f "$RESP_HEADER" "$RESP_BODY" "$LAST_NONCE" "$LAST_NONCE_FETCH" "$OPENSSL_CONFIG" "$OPENSSL_IN" "$OPENSSL_OUT" "$OPENSSL_ERR" "$TMP_SERVER_CSR"' 0 2 3 9 11 13 15
+trap 'rm -f "$RESP_HEADER" "$RESP_BODY" "$LAST_NONCE" "$OPENSSL_CONFIG" "$OPENSSL_IN" "$OPENSSL_OUT" "$OPENSSL_ERR" "$TMP_SERVER_CSR"' 0 2 3 9 11 13 15
 
 # file to store header of http request
 RESP_HEADER="`mktemp -t le.$$.resp-header.XXXXXX`"
@@ -27,8 +27,6 @@ RESP_HEADER="`mktemp -t le.$$.resp-header.XXXXXX`"
 RESP_BODY="`mktemp -t le.$$.resp-body.XXXXXX`"
 # file with Replay-Nonce header of last request
 LAST_NONCE="`mktemp -t le.$$.nonce.XXXXXX`"
-# tmp file for new Replay-Nonce header
-LAST_NONCE_FETCH="`mktemp -t le.$$.nonce-fetch.XXXXXX`"
 # tmp config for openssl for addional domains
 OPENSSL_CONFIG="`mktemp -t le.$$.openssl.cnf.XXXXXX`"
 # file to store openssl output
@@ -204,12 +202,7 @@ gen_protected(){
     NONCE="`cat "$LAST_NONCE"`"
     if [ -z "$NONCE" ]; then
         # echo fetch new nonce > /dev/stderr
-        curl -D "$LAST_NONCE_FETCH" -o /dev/null -s "$CA/directory"
-        handle_curl_exit $? "$CA/directory"
-
-        sed -e '/Replay-Nonce: / ! d; s/^Replay-Nonce: //' "$LAST_NONCE_FETCH" \
-            | tr -d '\r\n' \
-            > "$LAST_NONCE"
+        send_get_req "$CA/directory"
 
         NONCE="`cat "$LAST_NONCE"`"
         [ -n "$NONCE" ] || die "could not fetch new nonce"
@@ -273,10 +266,10 @@ send_req(){
 }
 
 send_get_req(){
-    URI="$1"
+    GET_URI="$1"
 
-    curl -s -D "$RESP_HEADER" -o "$RESP_BODY" "$URI"
-    handle_curl_exit $? "$URI"
+    curl -s -D "$RESP_HEADER" -o "$RESP_BODY" "$GET_URI"
+    handle_curl_exit $? "$GET_URI"
 
     # store the nonce for the next request
     sed -e '/Replay-Nonce: / ! d; s/^Replay-Nonce: //' "$RESP_HEADER" | tr -d '\r\n' > "$LAST_NONCE"
@@ -488,8 +481,7 @@ check_verification() {
         
             log check verification of $DOMAIN
 
-            curl -D "$RESP_HEADER" -o "$RESP_BODY" -s "$DOMAIN_URI"
-            handle_curl_exit $? "$DOMAIN_URI"
+            send_get_req "$DOMAIN_URI"
         
             if check_http_status 202; then
                 DOMAIN_STATUS="`tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"status":"\(invalid\|valid\|pending\)".*/\1/'`"
@@ -586,8 +578,7 @@ request_certificate(){
         cp -- "$OPENSSL_OUT" "$SERVER_CERT"
         CA_CERT_URI="`sed -e '/^Link: <.*>.*;rel="up"/ ! d; s/^Link: <\(.*\)>.*;rel="up".*/\1/' "$RESP_HEADER"`"
         if [ -n "$CA_CERT_URI" ]; then
-            curl -D "$RESP_HEADER" -o "$RESP_BODY" -s "$CA_CERT_URI"
-            handle_curl_exit $? "$CA_CERT_URI"
+            send_get_req "$CA_CERT_URI"
             openssl x509 -inform der -outform pem -in "$RESP_BODY" -out "$OPENSSL_OUT" 2> "$OPENSSL_ERR"
             handle_openssl_exit $? "converting issuing certificate"
             cp -- "$OPENSSL_OUT" "$SERVER_CERT"_chain
