@@ -103,6 +103,9 @@ PUSH_TOKEN_COMMIT=
 # the challenge type, can be dns-01 or http-01 (default)
 CHALLENGE_TYPE="http-01"
 
+# The meaningful User-Agent to help finding related log entries in the boulder server log
+USER_AGENT="bruncsak/ght-acme.sh"
+
 QUIET=
 
 # utility functions
@@ -258,7 +261,7 @@ send_req(){
 
     DATA='{"header":'"$REQ_JWKS"',"protected":"'"$PROTECTED"'","payload":"'"$PAYLOAD"'","signature":"'"$SIGNATURE"'"}'
 
-    curl -s -D "$RESP_HEADER" -o "$RESP_BODY" -d "$DATA" "$URI"
+    curl -s -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" -d "$DATA" "$URI"
     handle_curl_exit $? "$URI"
 
     # store the nonce for the next request
@@ -268,7 +271,7 @@ send_req(){
 send_get_req(){
     GET_URI="$1"
 
-    curl -s -D "$RESP_HEADER" -o "$RESP_BODY" "$GET_URI"
+    curl -s -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" "$GET_URI"
     handle_curl_exit $? "$GET_URI"
 
     # store the nonce for the next request
