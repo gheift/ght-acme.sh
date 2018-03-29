@@ -103,8 +103,11 @@ PUSH_TOKEN_COMMIT=
 # the challenge type, can be dns-01 or http-01 (default)
 CHALLENGE_TYPE="http-01"
 
+# the date of the that version
+VERSION_DATE="2018-03-29"
+
 # The meaningful User-Agent to help finding related log entries in the boulder server log
-USER_AGENT="bruncsak/ght-acme.sh"
+USER_AGENT="bruncsak/ght-acme.sh $VERSION_DATE"
 
 QUIET=
 
