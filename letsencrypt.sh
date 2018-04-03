@@ -19,14 +19,12 @@
 
 # temporary files to store input/output of curl or openssl
 
-trap 'rm -f "$RESP_HEADER" "$RESP_BODY" "$LAST_NONCE" "$OPENSSL_CONFIG" "$OPENSSL_IN" "$OPENSSL_OUT" "$OPENSSL_ERR" "$TMP_SERVER_CSR"' 0 2 3 9 11 13 15
+trap 'rm -f "$RESP_HEADER" "$RESP_BODY" "$OPENSSL_CONFIG" "$OPENSSL_IN" "$OPENSSL_OUT" "$OPENSSL_ERR" "$TMP_SERVER_CSR"' 0 2 3 9 11 13 15
 
 # file to store header of http request
 RESP_HEADER="`mktemp -t le.$$.resp-header.XXXXXX`"
 # file to store body of http request
 RESP_BODY="`mktemp -t le.$$.resp-body.XXXXXX`"
-# file with Replay-Nonce header of last request
-LAST_NONCE="`mktemp -t le.$$.nonce.XXXXXX`"
 # tmp config for openssl for addional domains
 OPENSSL_CONFIG="`mktemp -t le.$$.openssl.cnf.XXXXXX`"
 # file to store openssl output
@@ -201,24 +199,28 @@ show_error() {
     echo "  $ERR_DETAILS ($ERR_TYPE)" > /dev/stderr
 }
 
+# retrieve the nonce from the response header of the previous request for the forthcomming request
+
+extract_nonce() {
+    sed -e '/Replay-Nonce: / ! d; s/^Replay-Nonce: //' "$RESP_HEADER" | tr -d '\r\n'
+}
+
 # generate the PROTECTED variable, which contains a nonce retrieved from the
 # server in the Replay-Nonce header
 
 gen_protected(){
-    NONCE="`cat "$LAST_NONCE"`"
+    NONCE="`extract_nonce`"
     if [ -z "$NONCE" ]; then
         # echo fetch new nonce > /dev/stderr
         send_get_req "$CA/directory"
 
-        NONCE="`cat "$LAST_NONCE"`"
+        NONCE="`extract_nonce`"
         [ -n "$NONCE" ] || die "could not fetch new nonce"
     fi
 
     PROTECTED="`echo '{"nonce":"'"$NONCE"'"}' \
         | tr -d '\n\r' \
         | base64url`"
-
-    echo | tr -d '\n\r' > "$LAST_NONCE"
 }
 
 # generate the signature for the request
@@ -266,9 +268,6 @@ send_req(){
 
     curl -s -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" -d "$DATA" "$URI"
     handle_curl_exit $? "$URI"
-
-    # store the nonce for the next request
-    sed -e '/Replay-Nonce: / ! d; s/^Replay-Nonce: //' "$RESP_HEADER" | tr -d '\r\n' > "$LAST_NONCE"
 }
 
 send_get_req(){
@@ -276,9 +275,6 @@ send_get_req(){
 
     curl -s -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" "$GET_URI"
     handle_curl_exit $? "$GET_URI"
-
-    # store the nonce for the next request
-    sed -e '/Replay-Nonce: / ! d; s/^Replay-Nonce: //' "$RESP_HEADER" | tr -d '\r\n' > "$LAST_NONCE"
 }
 
 # account key handling
