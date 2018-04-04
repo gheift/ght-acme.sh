@@ -19,16 +19,12 @@
 
 # temporary files to store input/output of curl or openssl
 
-trap 'rm -f "$RESP_HEADER" "$RESP_BODY" "$LAST_NONCE" "$LAST_NONCE_FETCH" "$OPENSSL_CONFIG" "$OPENSSL_IN" "$OPENSSL_OUT" "$OPENSSL_ERR" "$TMP_SERVER_CSR"' 0 2 3 9 11 13 15
+trap 'rm -f "$RESP_HEADER" "$RESP_BODY" "$OPENSSL_CONFIG" "$OPENSSL_IN" "$OPENSSL_OUT" "$OPENSSL_ERR" "$TMP_SERVER_CSR"' 0 2 3 9 11 13 15
 
 # file to store header of http request
 RESP_HEADER="`mktemp -t le.$$.resp-header.XXXXXX`"
 # file to store body of http request
 RESP_BODY="`mktemp -t le.$$.resp-body.XXXXXX`"
-# file with Replay-Nonce header of last request
-LAST_NONCE="`mktemp -t le.$$.nonce.XXXXXX`"
-# tmp file for new Replay-Nonce header
-LAST_NONCE_FETCH="`mktemp -t le.$$.nonce-fetch.XXXXXX`"
 # tmp config for openssl for addional domains
 OPENSSL_CONFIG="`mktemp -t le.$$.openssl.cnf.XXXXXX`"
 # file to store openssl output
@@ -99,8 +95,17 @@ WEBDIR=
 # the script to be called to push the response to a remote server
 PUSH_TOKEN=
 
+# the script to be called to push the response to a remote server needs the commit feature
+PUSH_TOKEN_COMMIT=
+
 # the challenge type, can be dns-01 or http-01 (default)
 CHALLENGE_TYPE="http-01"
+
+# the date of the that version
+VERSION_DATE="2018-03-29"
+
+# The meaningful User-Agent to help finding related log entries in the boulder server log
+USER_AGENT="bruncsak/ght-acme.sh $VERSION_DATE"
 
 QUIET=
 
@@ -194,34 +199,28 @@ show_error() {
     echo "  $ERR_DETAILS ($ERR_TYPE)" > /dev/stderr
 }
 
-debug_badNonce() {
-   printf '%s: URI: %s ' "`date '+%s.%N'`" "$1" ; fgrep Replay-Nonce "$2" | cat -te
+# retrieve the nonce from the response header of the previous request for the forthcomming request
+
+extract_nonce() {
+    sed -e '/Replay-Nonce: / ! d; s/^Replay-Nonce: //' "$RESP_HEADER" | tr -d '\r\n'
 }
 
 # generate the PROTECTED variable, which contains a nonce retrieved from the
 # server in the Replay-Nonce header
 
 gen_protected(){
-    NONCE="`cat "$LAST_NONCE"`"
+    NONCE="`extract_nonce`"
     if [ -z "$NONCE" ]; then
         # echo fetch new nonce > /dev/stderr
-        curl -D "$LAST_NONCE_FETCH" -o /dev/null -s "$CA/directory"
-        handle_curl_exit $? "$CA/directory"
-        debug_badNonce "$CA/directory" "$LAST_NONCE_FETCH"
+        send_get_req "$CA/directory"
 
-        sed -e '/Replay-Nonce: / ! d; s/^Replay-Nonce: //' "$LAST_NONCE_FETCH" \
-            | tr -d '\r\n' \
-            > "$LAST_NONCE"
-
-        NONCE="`cat "$LAST_NONCE"`"
+        NONCE="`extract_nonce`"
         [ -n "$NONCE" ] || die "could not fetch new nonce"
     fi
 
     PROTECTED="`echo '{"nonce":"'"$NONCE"'"}' \
         | tr -d '\n\r' \
         | base64url`"
-
-    echo | tr -d '\n\r' > "$LAST_NONCE"
 }
 
 # generate the signature for the request
@@ -267,25 +266,15 @@ send_req(){
 
     DATA='{"header":'"$REQ_JWKS"',"protected":"'"$PROTECTED"'","payload":"'"$PAYLOAD"'","signature":"'"$SIGNATURE"'"}'
 
-    echo "Sending POST request to URI: $URI , POST data follows: $DATA"
-
-    curl -s -D "$RESP_HEADER" -o "$RESP_BODY" -d "$DATA" "$URI"
+    curl -s -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" -d "$DATA" "$URI"
     handle_curl_exit $? "$URI"
-    debug_badNonce "$URI" "$RESP_HEADER"
-
-    # store the nonce for the next request
-    sed -e '/Replay-Nonce: / ! d; s/^Replay-Nonce: //' "$RESP_HEADER" | tr -d '\r\n' > "$LAST_NONCE"
 }
 
 send_get_req(){
-    URI="$1"
+    GET_URI="$1"
 
-    curl -s -D "$RESP_HEADER" -o "$RESP_BODY" "$URI"
-    handle_curl_exit $? "$URI"
-    debug_badNonce "$URI" "$RESP_HEADER"
-
-    # store the nonce for the next request
-    sed -e '/Replay-Nonce: / ! d; s/^Replay-Nonce: //' "$RESP_HEADER" | tr -d '\r\n' > "$LAST_NONCE"
+    curl -s -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" "$GET_URI"
+    handle_curl_exit $? "$GET_URI"
 }
 
 # account key handling
@@ -373,10 +362,17 @@ request_challenge(){
     done
 }
 
+domain_commit() {
+    if [ -n "$PUSH_TOKEN" ] && [ -n "$PUSH_TOKEN_COMMIT" ]; then
+        log "calling $PUSH_TOKEN commit"
+        $PUSH_TOKEN commit || die "$PUSH_TOKEN could not commit"
+    fi
+}
+
 domain_dns_challenge() {
     DNS_CHALLENGE="`printf "%s\n" "$DOMAIN_TOKEN.$ACCOUNT_THUMB" | tr -d '\r\n' | openssl dgst -sha256 -binary | base64url`"
     if [ -n "$PUSH_TOKEN" ]; then
-        $PUSH_TOKEN "$1" "$DOMAIN" "$DNS_CHALLENGE" || die "Could not $1 $CHALLENGE_TYPE type challenge token with value $DNS_CHALLENGE for domain $DOMAIN via $PUSH_TOKEN"
+        $PUSH_TOKEN "$1" _acme-challenge."$DOMAIN" "$DNS_CHALLENGE" || die "Could not $1 $CHALLENGE_TYPE type challenge token with value $DNS_CHALLENGE for domain $DOMAIN via $PUSH_TOKEN"
     else
         printf 'update %s _acme-challenge.%s. 300 IN TXT "%s"\n\n' "$1" "$DOMAIN" "$DNS_CHALLENGE" |
             nsupdate || die "Could not $1 $CHALLENGE_TYPE type challenge token with value $DNS_CHALLENGE for domain $DOMAIN via nsupdate"
@@ -440,6 +436,7 @@ push_response() {
     
         push_domain_response
     done
+    domain_commit
 }
 
 request_domain_verification() {
@@ -486,9 +483,7 @@ check_verification() {
         
             log check verification of $DOMAIN
 
-            curl -D "$RESP_HEADER" -o "$RESP_BODY" -s "$DOMAIN_URI"
-            handle_curl_exit $? "$DOMAIN_URI"
-            debug_badNonce "$DOMAIN_URI" "$RESP_HEADER"
+            send_get_req "$DOMAIN_URI"
         
             if check_http_status 202; then
                 DOMAIN_STATUS="`tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"status":"\(invalid\|valid\|pending\)".*/\1/'`"
@@ -517,6 +512,7 @@ check_verification() {
             fi
         done
     done
+    domain_commit
 
     $ALL_VALID || exit 1
 }
@@ -584,9 +580,7 @@ request_certificate(){
         cp -- "$OPENSSL_OUT" "$SERVER_CERT"
         CA_CERT_URI="`sed -e '/^Link: <.*>.*;rel="up"/ ! d; s/^Link: <\(.*\)>.*;rel="up".*/\1/' "$RESP_HEADER"`"
         if [ -n "$CA_CERT_URI" ]; then
-            curl -D "$RESP_HEADER" -o "$RESP_BODY" -s "$CA_CERT_URI"
-            handle_curl_exit $? "$CA_CERT_URI"
-            debug_badNonce "$CA_CERT_URI" "$RESP_HEADER"
+            send_get_req "$CA_CERT_URI"
             openssl x509 -inform der -outform pem -in "$RESP_BODY" -out "$OPENSSL_OUT" 2> "$OPENSSL_ERR"
             handle_openssl_exit $? "converting issuing certificate"
             cp -- "$OPENSSL_OUT" "$SERVER_CERT"_chain
@@ -623,10 +617,10 @@ letsencrypt.sh sign -a account_key -r server_csr -c signed_crt
                       the directory will not be created
     -P exec           the command to call to install the token on a remote
                       server
+    -C                the command to call to install the token on a remote
+                      server needs the commit feature
 EOT
 }
-
-get_agreement_url
 
 [ $# -gt 0 ] || die "no action given"
 
@@ -660,9 +654,10 @@ case "$ACTION" in
             ?|:) echo "invalid arguments" > /dev/stderr; exit 1;;
         esac; done;;
     sign)
-        while getopts :hqa:k:r:c:w:P:l: name; do case "$name" in
+        while getopts :hqCa:k:r:c:w:P:l: name; do case "$name" in
             h) usage; exit 1;;
             q) QUIET=1;;
+            C) PUSH_TOKEN_COMMIT=1;;
             a) ACCOUNT_KEY="$OPTARG";;
             k)
                 if [ -n "$SERVER_CSR" ]; then
