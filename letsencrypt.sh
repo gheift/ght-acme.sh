@@ -98,6 +98,9 @@ PUSH_TOKEN=
 # the script to be called to push the response to a remote server needs the commit feature
 PUSH_TOKEN_COMMIT=
 
+# set the option of the preferred IP family for connecting to the boulder server
+IPV_OPTION=
+
 # the challenge type, can be dns-01 or http-01 (default)
 CHALLENGE_TYPE="http-01"
 
@@ -266,14 +269,14 @@ send_req(){
 
     DATA='{"header":'"$REQ_JWKS"',"protected":"'"$PROTECTED"'","payload":"'"$PAYLOAD"'","signature":"'"$SIGNATURE"'"}'
 
-    curl -s -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" -d "$DATA" "$URI"
+    curl -s $IPV_OPTION -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" -d "$DATA" "$URI"
     handle_curl_exit $? "$URI"
 }
 
 send_get_req(){
     GET_URI="$1"
 
-    curl -s -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" "$GET_URI"
+    curl -s $IPV_OPTION -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" "$GET_URI"
     handle_curl_exit $? "$GET_URI"
 }
 
@@ -595,11 +598,11 @@ request_certificate(){
 
 usage() {
     cat << 'EOT'
-letsencrypt.sh register [-p] -a account_key -e email
-letsencrypt.sh delete -a account_key
+letsencrypt.sh register [-4|-6] [-p] -a account_key -e email
+letsencrypt.sh delete [-4|-6] -a account_key
 letsencrypt.sh thumbprint -a account_key
-letsencrypt.sh sign -a account_key -k server_key -c signed_crt domain ...
-letsencrypt.sh sign -a account_key -r server_csr -c signed_crt
+letsencrypt.sh sign [-4|-6] -a account_key -k server_key -c signed_crt domain ...
+letsencrypt.sh sign [-4|-6] -a account_key -r server_csr -c signed_crt
 
     -a account_key    the private key
     -e email          the email address assigned to the account key during
@@ -610,6 +613,8 @@ letsencrypt.sh sign -a account_key -r server_csr -c signed_crt
     -c signed_crt     the location where to store the signed certificate
     -l challenge_type can be dns-01 or http-01 (default)
     -q                quiet operation
+    -4                the connection to the server should use IPv4
+    -6                the connection to the server should use IPv6
 
   sign:
     -w webdir         the directory, where the response should be stored
@@ -631,16 +636,20 @@ SHOW_THUMBPRINT=0
 
 case "$ACTION" in
     delete)
-        while getopts :hqa: name; do case "$name" in
+        while getopts :hq46a: name; do case "$name" in
             h) usage; exit 1;;
             q) QUIET=1;;
+            4) IPV_OPTION="-4";;
+            6) IPV_OPTION="-6";;
             a) ACCOUNT_KEY="$OPTARG";;
             ?|:) echo "invalid arguments" > /dev/stderr; exit 1;;
         esac; done;;
     register)
-        while getopts :hqa:e:p name; do case "$name" in
+        while getopts :hq46a:e:p name; do case "$name" in
             h) usage; exit 1;;
             q) QUIET=1;;
+            4) IPV_OPTION="-4";;
+            6) IPV_OPTION="-6";;
             p) SHOW_THUMBPRINT=1;;
             a) ACCOUNT_KEY="$OPTARG";;
             e) ACCOUNT_EMAIL="$OPTARG";;
@@ -654,9 +663,11 @@ case "$ACTION" in
             ?|:) echo "invalid arguments" > /dev/stderr; exit 1;;
         esac; done;;
     sign)
-        while getopts :hqCa:k:r:c:w:P:l: name; do case "$name" in
+        while getopts :hq46Ca:k:r:c:w:P:l: name; do case "$name" in
             h) usage; exit 1;;
             q) QUIET=1;;
+            4) IPV_OPTION="-4";;
+            6) IPV_OPTION="-6";;
             C) PUSH_TOKEN_COMMIT=1;;
             a) ACCOUNT_KEY="$OPTARG";;
             k)
