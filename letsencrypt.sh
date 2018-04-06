@@ -271,6 +271,18 @@ send_req(){
 
     curl -s $IPV_OPTION -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" -d "$DATA" "$URI"
     handle_curl_exit $? "$URI"
+
+    if ! check_http_status 400; then
+        return
+    elif ! fgrep -q 'urn:ietf:params:acme:error:badNonce' "$RESP_BODY" ; then
+        return
+    fi
+    echo "badNonce error: other than extrem load on the boulder server," > /dev/stderr
+    echo "this is mostly due to multiple client egress IP addresses," > /dev/stderr
+    echo "including working IPv4 and IPv6 addresses on dual family systems." > /dev/stderr
+    echo "In that case as a workaround please try to restrict the egress" > /dev/stderr
+    echo "IP address with the -4 or -6 command line option on the script." > /dev/stderr
+    exit 1
 }
 
 send_get_req(){
