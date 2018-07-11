@@ -105,7 +105,7 @@ IPV_OPTION=
 CHALLENGE_TYPE="http-01"
 
 # the date of the that version
-VERSION_DATE="2018-05-03"
+VERSION_DATE="2018-07-11"
 
 # The meaningful User-Agent to help finding related log entries in the boulder server log
 USER_AGENT="bruncsak/ght-acme.sh $VERSION_DATE"
@@ -582,7 +582,7 @@ request_certificate(){
     log request certificate
 
     NEW_CERT="`
-            sed -e 's/-----BEGIN CERTIFICATE REQUEST-----/{"resource":"new-cert","csr":"/; s/-----END CERTIFICATE REQUEST-----/"}/;s/+/-/g;s!/!_!g;s/=//g' \
+            sed -r -e 's/-----BEGIN( NEW)? CERTIFICATE REQUEST-----/{"resource":"new-cert","csr":"/; s/-----END( NEW)? CERTIFICATE REQUEST-----/"}/;s/\+/-/g;s!/!_!g;s/=//g' \
                 "$TMP_SERVER_CSR" \
             | tr -d '\r\n' \
     `"
