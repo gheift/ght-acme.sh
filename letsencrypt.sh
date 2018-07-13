@@ -572,6 +572,9 @@ csr_extract_domains() {
 
     DOMAINS="`sed -n '/X509v3 Subject Alternative Name:/ { n; s/^\s*DNS\s*:\s*//; s/\s*,\s*DNS\s*:\s*/ /g; p; q; }' "$OPENSSL_OUT"`"
     # echo "$DOMAINS"; exit
+    if [ -z "$DOMAINS" ]; then
+        DOMAINS="`sed -n '/Subject:/ {s/^.*CN=//; s/,*\s*$//; p}' "$OPENSSL_OUT"`"
+    fi
 }
 
 gen_csr() {
