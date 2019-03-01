@@ -383,6 +383,9 @@ domain_commit() {
     if [ -n "$PUSH_TOKEN" ] && [ -n "$PUSH_TOKEN_COMMIT" ]; then
         log "calling $PUSH_TOKEN commit"
         $PUSH_TOKEN commit || die "$PUSH_TOKEN could not commit"
+        # We cannot know how long the execution of an external command will take.
+        # Safer to force fetching a new nonce to avoid fatal badNonce error due to nonce validity timeout.
+        > "$RESP_HEADER"
     fi
 }
 
