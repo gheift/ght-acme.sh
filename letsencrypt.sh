@@ -105,7 +105,7 @@ IPV_OPTION=
 CHALLENGE_TYPE="http-01"
 
 # the date of the that version
-VERSION_DATE="2018-07-11"
+VERSION_DATE="2019-03-01"
 
 # The meaningful User-Agent to help finding related log entries in the boulder server log
 USER_AGENT="bruncsak/ght-acme.sh $VERSION_DATE"
@@ -125,8 +125,10 @@ log() {
 }
 
 die() {
+    RETCODE="$?"
+    [ -n "$2" ] && RETCODE="$2"
     [ -n "$1" ] && printf "%s\n" "$1" > /dev/stderr
-    exit 1
+    exit "$RETCODE"
 }
 
 validate_domain() {
@@ -712,7 +714,7 @@ case "$ACTION" in
         exit 1
         ;;
     *)
-        die "invalid action: $ACTION";;
+        die "invalid action: $ACTION" 1 ;;
 esac
 
 shift $(($OPTIND - 1))
@@ -745,7 +747,7 @@ case "$ACTION" in
         printf "account thumbprint: %s\n" "$ACCOUNT_THUMB"
         exit 0;;
 
-    sign) die "neither server key nor server csr given";;
+    sign) die "neither server key nor server csr given" 1 ;;
 
     sign-key)
         load_account_key
@@ -768,7 +770,7 @@ case "$ACTION" in
         ;;
 
     *)
-        die "invalid action: $ACTION";;
+        die "invalid action: $ACTION" 1 ;;
 esac
 
 while [ "$#" -gt 0 ]; do
