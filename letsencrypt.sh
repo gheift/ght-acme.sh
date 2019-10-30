@@ -34,7 +34,7 @@ OPENSSL_ERR="`mktemp -t le.$$.openssl.err.XXXXXX`"
 # file to store the CSR
 TMP_SERVER_CSR="`mktemp -t le.$$.server.csr.XXXXXX`"
 
-CA="https://acme-staging.api.letsencrypt.org"
+CADIR="https://acme-staging-v02.api.letsencrypt.org/directory"
 
 # Prefix the following line with "# letsencrypt-production-server #", to use
 # the staging server of letsencrypt. The staging server has lower rate limits,
@@ -42,7 +42,7 @@ CA="https://acme-staging.api.letsencrypt.org"
 # again on commiting the file, add the filter to your git config by running
 #   git config filter.production-server.clean misc/filter-production-server
 
-CA="https://acme-v01.api.letsencrypt.org"
+CADIR="https://acme-v02.api.letsencrypt.org/directory"
 
 # global variables:
 
@@ -105,7 +105,7 @@ IPV_OPTION=
 CHALLENGE_TYPE="http-01"
 
 # the date of the that version
-VERSION_DATE="2019-03-01"
+VERSION_DATE="2019-10-29"
 
 # The meaningful User-Agent to help finding related log entries in the boulder server log
 USER_AGENT="bruncsak/ght-acme.sh $VERSION_DATE"
@@ -144,6 +144,10 @@ validate_domain() {
     else
         return 1
     fi
+}
+
+fetch_location() {
+sed -e '/^Location: / ! d; s/Location: //' "$RESP_HEADER" | tr -d '\r\n'
 }
 
 handle_curl_exit() {
@@ -217,15 +221,17 @@ gen_protected(){
     NONCE="`extract_nonce`"
     if [ -z "$NONCE" ]; then
         # echo fetch new nonce > /dev/stderr
-        send_get_req "$CA/directory"
+        send_get_req "$NEWNONCEURL"
 
         NONCE="`extract_nonce`"
         [ -n "$NONCE" ] || die "could not fetch new nonce"
     fi
 
-    PROTECTED="`echo '{"nonce":"'"$NONCE"'"}' \
-        | tr -d '\n\r' \
-        | base64url`"
+    if [ -z "$KID" ]; then
+        echo '{"alg":"RS256","jwk":'"$ACCOUNT_JWK"',"nonce":"'"$NONCE"'","url":"'"$1"'"}'
+    else
+        echo '{"alg":"RS256","kid":"'"$KID"'","nonce":"'"$NONCE"'","url":"'"$1"'"}'
+    fi
 }
 
 # generate the signature for the request
@@ -233,6 +239,7 @@ gen_protected(){
 gen_signature() {
     printf "%s" "$PROTECTED.$PAYLOAD" > "$OPENSSL_IN"
     openssl dgst -sha256 -binary -sign "$ACCOUNT_KEY" < "$OPENSSL_IN" > "$OPENSSL_OUT" 2> "$OPENSSL_ERR"
+    # echo "$OPENSSL_OUT: " ; cat -t "$OPENSSL_OUT"
     handle_openssl_exit "$?" "signing request"
     SIGNATURE="`base64url < "$OPENSSL_OUT"`"
 }
@@ -262,16 +269,16 @@ key_get_exponent(){
 # the payload is signed by the ACCOUNT_KEY
 # the response header is stored in the file $RESP_HEADER, the body in the file $RESP_BODY
 
-send_req(){
+send_req_no_kid(){
     URI="$1"
 
-    gen_protected
-    PAYLOAD="`echo "$2" | base64url`"
+      PAYLOAD="`         echo "$2" | tr -d '\n\r' | base64url`"
+    PROTECTED="`gen_protected "$URI" | tr -d '\n\r' | base64url`"
     gen_signature
 
-    DATA='{"header":'"$REQ_JWKS"',"protected":"'"$PROTECTED"'","payload":"'"$PAYLOAD"'","signature":"'"$SIGNATURE"'"}'
+    DATA='{"protected":"'"$PROTECTED"'","payload":"'"$PAYLOAD"'","signature":"'"$SIGNATURE"'"}'
 
-    curl -s $IPV_OPTION -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" -d "$DATA" "$URI"
+    curl -s $IPV_OPTION -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" -H "Content-type: application/jose+json" -d "$DATA" "$URI"
     handle_curl_exit $? "$URI"
 
     if ! check_http_status 400; then
@@ -285,6 +292,14 @@ send_req(){
     echo "In that case as a workaround please try to restrict the egress" > /dev/stderr
     echo "IP address with the -4 or -6 command line option on the script." > /dev/stderr
     exit 1
+}
+
+send_req(){
+    URI="$1"
+
+    [ -z "$KID" ] && register_account_key retrieve_kid
+
+    send_req_no_kid "$1" "$2"
 }
 
 send_get_req(){
@@ -308,19 +323,37 @@ load_account_key(){
     ACCOUNT_THUMB="`echo "$ACCOUNT_JWK" | tr -d '\r\n' | openssl dgst -sha256 -binary | base64url`"
 }
 
-get_agreement_url(){
-    send_get_req "$CA/directory"
+get_urls(){
+    send_get_req "$CADIR"
 
-    AGREEMENTURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"terms-of-service":"\([^"]*\)".*/\1/')"
+    egrep -s -q -e '"newNonce"' "$RESP_BODY" &&
+    NEWNONCEURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -r -e 's/.*"newNonce":"([^"]*)".*/\1/')"
+
+    egrep -s -q -e '"newAccount"' "$RESP_BODY" &&
+    NEWACCOUNTURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -r -e 's/.*"newAccount":"([^"]*)".*/\1/')"
+
+    egrep -s -q -e '"newOrder"' "$RESP_BODY" &&
+    NEWORDERURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -r -e 's/.*"newOrder":"([^"]*)".*/\1/')"
+
+    egrep -s -q -e '"revokeCert"' "$RESP_BODY" &&
+    REVOKECERTURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -r -e 's/.*"revokeCert":"([^"]*)".*/\1/')"
+
+    egrep -s -q -e '"keyChange"' "$RESP_BODY" &&
+    KEYCHANGEURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -r -e 's/.*"keyChange":"([^"]*)".*/\1/')"
 }
 
 register_account_key(){
 
-    get_agreement_url
-    NEW_REG='{"resource":"new-reg","contact":["mailto:'"$ACCOUNT_EMAIL"'"],"agreement":"'"$AGREEMENTURL"'"}'
-    send_req "$CA/acme/new-reg" "$NEW_REG"
+    [ -n "$NEWACCOUNTURL" ] || get_urls
+    NEW_REG='{"termsOfServiceAgreed":true,"contact":["mailto:'"$ACCOUNT_EMAIL"'"]}'
+    send_req_no_kid "$NEWACCOUNTURL" "$NEW_REG"
 
-    if check_http_status 201; then
+    if check_http_status 200; then
+        KID="`fetch_location`"
+        [ "$1" = "retrieve_kid" ] || echo "account already registered" > /dev/stderr
+        return
+    elif check_http_status 201; then
+        KID="`fetch_location`"
         return
     elif check_http_status 409; then
         [ "$1" = "nodie" ] || die "account already exists"
@@ -348,35 +381,54 @@ delete_account_key(){
 #   domain: a list of domains for which the certificate should be valid
 
 request_challenge_domain(){
-    log "request challenge for $DOMAIN"
 
-    NEW_AUTHZ='{"resource":"new-authz","identifier":{"type":"dns","value":"'"$DOMAIN"'"}}'
-    send_req "$CA/acme/new-authz" "$NEW_AUTHZ"
+    send_req "$DOMAIN_AUTHZ" ""
 
-    if check_http_status 201; then
-        DOMAIN_CHALLENGE="$(cat "$RESP_BODY" | tr -d ' \r\n' | sed -e '/"'"$CHALLENGE_TYPE"'"/ ! d; s/.*{\([^}]*"type":"'"$CHALLENGE_TYPE"'"[^}]*\)}.*/\1/')"
-        DOMAIN_TOKEN="$(echo "$DOMAIN_CHALLENGE" | sed 's/.*"token":"\([^"]*\)".*/\1/')"
-        DOMAIN_URI="$(echo "$DOMAIN_CHALLENGE" | sed 's/.*"uri":"\([^"]*\)".*/\1/')"
+    if check_http_status 200; then
+        DOMAIN="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e '/"status":"pending"/ ! d; s/.*"identifier":{"type":"dns","value":"\([^"]*\)"}.*/\1/')"
+        if [ -n "$DOMAIN" ] ;then
+            DOMAIN_CHALLENGE="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e '/"'"$CHALLENGE_TYPE"'"/ ! d; s/.*{\([^}]*"type":"'"$CHALLENGE_TYPE"'"[^}]*\)}.*/\1/')"
+            DOMAIN_TOKEN="$(echo "$DOMAIN_CHALLENGE" | sed 's/.*"token":"\([^"]*\)".*/\1/')"
+            DOMAIN_URI="$(echo "$DOMAIN_CHALLENGE" | sed 's/.*"url":"\([^"]*\)".*/\1/')"
 
-        DOMAIN_DATA="$DOMAIN_DATA $DOMAIN $DOMAIN_URI $DOMAIN_TOKEN"
+            DOMAIN_DATA="$DOMAIN_DATA $DOMAIN $DOMAIN_URI $DOMAIN_TOKEN $DOMAIN_AUTHZ"
+            log "retrieve challenge for $DOMAIN"
+        fi
     elif check_http_status 400; then
         # account not registred?
-        show_error "requesting challenge for $DOMAIN"
+        show_error "retrieve challenge for URL: $DOMAIN_AUTHZ"
         exit 1
     elif check_http_status 403; then
         # account not registred?
-        show_error "requesting challenge for $DOMAIN"
+        show_error "retrieve challenge for URL: $DOMAIN_AUTHZ"
         exit 1
     else
-        unhandled_response "requesting challenge for $DOMAIN"
+        unhandled_response "retrieve challenge for URL: $DOMAIN_AUTHZ"
     fi
 }
 
 request_challenge(){
+    log "creating new order"
+
     set -- $DOMAINS
     for DOMAIN do
+         [ -n "$DOMAIN_ORDERS" ] && DOMAIN_ORDERS="$DOMAIN_ORDERS,"
+         DOMAIN_ORDERS="$DOMAIN_ORDERS"'{"type":"dns","value":"'"$DOMAIN"'"}'
+    done
+
+    NEW_ORDER='{"identifiers":['"$DOMAIN_ORDERS"']}'
+    send_req "$NEWORDERURL" "$NEW_ORDER"
+    if check_http_status 201; then
+        DOMAIN_AUTHZ_LIST="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/^.*"authorizations":\[\([^]]*\)\].*$/\1/' | tr -d '"' | tr ',' ' ')"
+        FINALIZE="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/^.*"finalize":"\([^"]*\).*$/\1/')"
+    else
+        unhandled_response "requesting new order for $DOMAINS"
+    fi
+    set -- $DOMAIN_AUTHZ_LIST
+    for DOMAIN_AUTHZ do
         request_challenge_domain
     done
+
 }
 
 domain_commit() {
@@ -451,8 +503,9 @@ push_response() {
         DOMAIN="$1"
         DOMAIN_URI="$2"
         DOMAIN_TOKEN="$3"
+        DOMAIN_AUTHZ="$4"
 
-        shift 3
+        shift 4
     
         push_domain_response
     done
@@ -462,10 +515,10 @@ push_response() {
 request_domain_verification() {
     log request verification of $DOMAIN
 
-    send_req $DOMAIN_URI '{"resource":"challenge","type":"'"$CHALLENGE_TYPE"'","keyAuthorization":"'"$DOMAIN_TOKEN.$ACCOUNT_THUMB"'","token":"'"$DOMAIN_TOKEN"'"}'
+    send_req $DOMAIN_URI '{}'
 
-    if check_http_status 202; then
-        printf ""
+    if check_http_status 200; then
+        return
     else
         unhandled_response "requesting verification of challenge of $DOMAIN"
     fi
@@ -478,8 +531,9 @@ request_verification() {
         DOMAIN="$1"
         DOMAIN_URI="$2"
         DOMAIN_TOKEN="$3"
+        DOMAIN_AUTHZ="$4"
     
-        shift 3
+        shift 4
 
         request_domain_verification
     done
@@ -498,15 +552,16 @@ check_verification() {
             DOMAIN="$1"
             DOMAIN_URI="$2"
             DOMAIN_TOKEN="$3"
+            DOMAIN_AUTHZ="$4"
         
-            shift 3
+            shift 4
         
             log check verification of $DOMAIN
 
-            send_get_req "$DOMAIN_URI"
+            send_req "$DOMAIN_AUTHZ" ""
         
-            if check_http_status 202; then
-                DOMAIN_STATUS="`tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"status":"\(invalid\|valid\|pending\)".*/\1/'`"
+            if check_http_status 200; then
+                DOMAIN_STATUS="`tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"type":"'"$CHALLENGE_TYPE"'","status":"\(invalid\|valid\|pending\)".*/\1/'`"
                 case "$DOMAIN_STATUS" in
                     valid)
                         log $DOMAIN is valid
@@ -521,7 +576,7 @@ check_verification() {
                         ;;
                     pending)
                         log $DOMAIN is pending
-                        DOMAIN_DATA="$DOMAIN_DATA $DOMAIN $DOMAIN_URI $DOMAIN_TOKEN"
+                        DOMAIN_DATA="$DOMAIN_DATA $DOMAIN $DOMAIN_URI $DOMAIN_TOKEN $DOMAIN_AUTHZ"
                         ;;
                     *)
                         unhandled_response "checking verification status of $DOMAIN"
@@ -587,32 +642,48 @@ gen_csr() {
 }
 
 request_certificate(){
-    log request certificate
+    log finalize order
 
     NEW_CERT="`
-            sed -r -e 's/-----BEGIN( NEW)? CERTIFICATE REQUEST-----/{"resource":"new-cert","csr":"/; s/-----END( NEW)? CERTIFICATE REQUEST-----/"}/;s/\+/-/g;s!/!_!g;s/=//g' \
+            sed -r -e 's/-----BEGIN( NEW)? CERTIFICATE REQUEST-----/{"csr":"/; s/-----END( NEW)? CERTIFICATE REQUEST-----/"}/;s/\+/-/g;s!/!_!g;s/=//g' \
                 "$TMP_SERVER_CSR" \
             | tr -d '\r\n' \
     `"
-
-    send_req "$CA/acme/new-cert" "$NEW_CERT"
+    while : ;do
+        send_req "$FINALIZE" "$NEW_CERT"
     
-    if check_http_status 201; then
-        openssl x509 -inform der -outform pem -in "$RESP_BODY" -out "$OPENSSL_OUT" 2> "$OPENSSL_ERR"
-        handle_openssl_exit $? "converting certificate"
-        cp -- "$OPENSSL_OUT" "$SERVER_CERT"
-        CA_CERT_URI="`sed -e '/^Link: <.*>.*;rel="up"/ ! d; s/^Link: <\(.*\)>.*;rel="up".*/\1/' "$RESP_HEADER"`"
-        if [ -n "$CA_CERT_URI" ]; then
-            send_get_req "$CA_CERT_URI"
-            openssl x509 -inform der -outform pem -in "$RESP_BODY" -out "$OPENSSL_OUT" 2> "$OPENSSL_ERR"
-            handle_openssl_exit $? "converting issuing certificate"
-            cp -- "$OPENSSL_OUT" "$SERVER_CERT"_chain
+        if check_http_status 200; then
+            ORDER_STATUS="`tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"status":"\(invalid\|valid\|pending\|ready\|processing\)".*/\1/'`"
+            case "$ORDER_STATUS" in
+                valid)
+                    log order is valid
+                    CERTIFICATE="`tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"certificate":"\([^"]*\)".*/\1/'`"
+                    break
+                    ;;
+                processing)
+                    echo order: "$ORDER_STATUS" > /dev/stderr
+                    sleep 1
+                    continue
+                    ;;
+                invalid|pending|ready)
+                    echo order: "$ORDER_STATUS" > /dev/stderr
+                    exit 1
+                    ;;
+                *)
+                    unhandled_response "checking verification status of order"
+                    ;;
+            esac
+        else
+            unhandled_response "requesting order finalization"
         fi
-    elif check_http_status 429; then
-        show_error "requesting certificate"
-        exit 1
+    done
+    log request certificate
+    send_req "$CERTIFICATE" ""
+    if check_http_status 200; then
+        sed -e '/^$/,$d' "$RESP_BODY" > "$SERVER_CERT"
+        sed -e '1,/^$/d' "$RESP_BODY" > "$SERVER_CERT"_chain
     else
-        unhandled_response "requesting certificate"
+        unhandled_response "retrieveing certificate"
     fi
 }
 
@@ -733,7 +804,7 @@ case "$ACTION" in
     delete)
         load_account_key
         register_account_key nodie
-        REGISTRATION_URI="`sed -e '/^Location: / ! d; s/Location: //' "$RESP_HEADER" | tr -d '\r\n'`"
+        REGISTRATION_URI="`fetch_location`"
         delete_account_key
         exit 0;;
 
@@ -786,6 +857,7 @@ DOMAINS="`printf "%s" "$DOMAINS" | tr A-Z a-z`"
 
 [ "$ACTION" != "sign-csr" ] && gen_csr
 
+get_urls
 request_challenge
 push_response
 request_verification
