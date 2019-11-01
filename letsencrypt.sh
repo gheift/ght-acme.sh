@@ -137,7 +137,7 @@ validate_domain() {
         return 1
     fi
 
-    DOMAIN_OUT="`printf "%s\n" "$DOMAIN_IN" | sed -e 's/^...$/!/; s/^.\{254,\}$/!/; s/^\([a-zA-Z0-9]\([-a-zA-Z0-9]\{0,61\}[a-zA-Z0-9]\)\?\.\)\+[a-zA-Z]\{2,63\}$/_/;'`"
+    DOMAIN_OUT="`printf "%s\n" "$DOMAIN_IN" | sed -e 's/^...$/!/; s/^.\{254,\}$/!/; s/^\([a-zA-Z0-9]\([-a-zA-Z0-9]\{0,61\}[a-zA-Z0-9]\)\{0,1\}\.\)\{1,\}[a-zA-Z]\{2,63\}$/_/;'`"
 
     if [ "$DOMAIN_OUT" = _ ]; then
         return 0
@@ -147,7 +147,7 @@ validate_domain() {
 }
 
 fetch_location() {
-sed -e '/^Location: / ! d; s/Location: //' "$RESP_HEADER" | tr -d '\r\n'
+sed -e '/^Location: / !d; s/Location: //' "$RESP_HEADER" | tr -d '\r\n'
 }
 
 handle_curl_exit() {
@@ -211,7 +211,7 @@ show_error() {
 # retrieve the nonce from the response header of the previous request for the forthcomming request
 
 extract_nonce() {
-    sed -e '/Replay-Nonce: / ! d; s/^Replay-Nonce: //' "$RESP_HEADER" | tr -d '\r\n'
+    sed -e '/Replay-Nonce: / !d; s/^Replay-Nonce: //' "$RESP_HEADER" | tr -d '\r\n'
 }
 
 # generate the PROTECTED variable, which contains a nonce retrieved from the
@@ -259,7 +259,7 @@ key_get_exponent(){
     openssl rsa -in "$1" -text -noout > "$OPENSSL_OUT" 2> "$OPENSSL_ERR"
     handle_openssl_exit $? "extracting account key exponent"
 
-    sed -e '/^publicExponent: / ! d; s/^publicExponent: [0-9]*\s\+(\(\(0\)x\([0-9]\)\|0x\)\(\([0-9][0-9]\)*\))/\2\3\4/' \
+    sed -e '/^publicExponent: / !d; s/^publicExponent: [0-9]* \{1,\}(\(.*\)).*$/\1/;s/^0x\([0-9a-fA-F]\)\(\([0-9a-fA-F][0-9a-fA-F]\)*\)$/0x0\1\2/;s/^0x\(\([0-9a-fA-F][0-9a-fA-F]\)*\)$/\1/' \
         < "$OPENSSL_OUT" \
         | xxd -r -p \
         | base64url
@@ -385,9 +385,9 @@ request_challenge_domain(){
     send_req "$DOMAIN_AUTHZ" ""
 
     if check_http_status 200; then
-        DOMAIN="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e '/"status":"pending"/ ! d; s/.*"identifier":{"type":"dns","value":"\([^"]*\)"}.*/\1/')"
+        DOMAIN="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e '/"status":"pending"/ !d; s/.*"identifier":{"type":"dns","value":"\([^"]*\)"}.*/\1/')"
         if [ -n "$DOMAIN" ] ;then
-            DOMAIN_CHALLENGE="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e '/"'"$CHALLENGE_TYPE"'"/ ! d; s/.*{\([^}]*"type":"'"$CHALLENGE_TYPE"'"[^}]*\)}.*/\1/')"
+            DOMAIN_CHALLENGE="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e '/"'"$CHALLENGE_TYPE"'"/ !d; s/.*{\([^}]*"type":"'"$CHALLENGE_TYPE"'"[^}]*\)}.*/\1/')"
             DOMAIN_TOKEN="$(echo "$DOMAIN_CHALLENGE" | sed 's/.*"token":"\([^"]*\)".*/\1/')"
             DOMAIN_URI="$(echo "$DOMAIN_CHALLENGE" | sed 's/.*"url":"\([^"]*\)".*/\1/')"
 
@@ -644,20 +644,20 @@ gen_csr() {
 request_certificate(){
     log finalize order
 
-    NEW_CERT="`
+    NEW_CERT="$(
             sed -r -e 's/-----BEGIN( NEW)? CERTIFICATE REQUEST-----/{"csr":"/; s/-----END( NEW)? CERTIFICATE REQUEST-----/"}/;s/\+/-/g;s!/!_!g;s/=//g' \
                 "$TMP_SERVER_CSR" \
             | tr -d '\r\n' \
-    `"
+    )"
     while : ;do
         send_req "$FINALIZE" "$NEW_CERT"
     
         if check_http_status 200; then
-            ORDER_STATUS="`tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"status":"\(invalid\|valid\|pending\|ready\|processing\)".*/\1/'`"
+            ORDER_STATUS="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"status":"\(invalid\|valid\|pending\|ready\|processing\)".*/\1/')"
             case "$ORDER_STATUS" in
                 valid)
                     log order is valid
-                    CERTIFICATE="`tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"certificate":"\([^"]*\)".*/\1/'`"
+                    CERTIFICATE="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"certificate":"\([^"]*\)".*/\1/')"
                     break
                     ;;
                 processing)
