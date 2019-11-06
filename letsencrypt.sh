@@ -19,8 +19,12 @@
 
 # temporary files to store input/output of curl or openssl
 
-trap 'rm -f "$RESP_HEADER" "$RESP_BODY" "$OPENSSL_CONFIG" "$OPENSSL_IN" "$OPENSSL_OUT" "$OPENSSL_ERR" "$TMP_SERVER_CSR"' 0 2 3 9 11 13 15
+trap 'rm -f "$RESP_HEABOD $WGET_OUT $RESP_HEADER" "$RESP_BODY" "$OPENSSL_CONFIG" "$OPENSSL_IN" "$OPENSSL_OUT" "$OPENSSL_ERR" "$TMP_SERVER_CSR"' 0 2 3 9 11 13 15
 
+# file to store header and body of http response
+RESP_HEABOD="`mktemp -t le.$$.resp-heabod.XXXXXX`"
+# file to store the output of the wget
+WGET_OUT="`mktemp -t le.$$.resp-out.XXXXXX`"
 # file to store header of http request
 RESP_HEADER="`mktemp -t le.$$.resp-header.XXXXXX`"
 # file to store body of http request
@@ -105,7 +109,7 @@ IPV_OPTION=
 CHALLENGE_TYPE="http-01"
 
 # the date of the that version
-VERSION_DATE="2019-10-29"
+VERSION_DATE="2019-11-06"
 
 # The meaningful User-Agent to help finding related log entries in the boulder server log
 USER_AGENT="bruncsak/ght-acme.sh $VERSION_DATE"
@@ -148,6 +152,26 @@ validate_domain() {
 
 fetch_location() {
 sed -e '/^Location: / !d; s/Location: //' "$RESP_HEADER" | tr -d '\r\n'
+}
+
+handle_wget_exit() {
+    WGET_EXIT="$1"
+    WGET_URI="$2"
+
+    if [ "$WGET_EXIT" "!=" 0 -o -s "$WGET_OUT" ]; then
+        echo "error while making a web request to \"$WGET_URI\"" > /dev/stderr
+        echo "wget exit status: $WGET_EXIT" > /dev/stderr
+        case "$WGET_EXIT" in
+        esac
+
+        cat "$WGET_OUT" > /dev/stderr
+        cat "$RESP_HEABOD" > /dev/stderr
+
+        exit 1
+    fi
+
+    tr -d '\r' < "$RESP_HEABOD" | sed -e '/^$/,$d' > "$RESP_HEADER"
+    tr -d '\r' < "$RESP_HEABOD" | sed -e '1,/^$/d' > "$RESP_BODY"
 }
 
 handle_curl_exit() {
@@ -278,8 +302,13 @@ send_req_no_kid(){
 
     DATA='{"protected":"'"$PROTECTED"'","payload":"'"$PAYLOAD"'","signature":"'"$SIGNATURE"'"}'
 
-    curl -s $IPV_OPTION -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" -H "Content-type: application/jose+json" -d "$DATA" "$URI"
-    handle_curl_exit $? "$URI"
+    if [ "$USE_WGET" != yes ] ;then
+        curl -s $IPV_OPTION -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" -H "Content-type: application/jose+json" -d "$DATA" "$URI"
+        handle_curl_exit $? "$URI"
+    else
+        wget -q --retry-connrefused   $IPV_OPTION -U "$USER_AGENT" --save-headers  -O "$RESP_HEABOD" --header="Content-type: application/jose+json" --post-data="$DATA" "$URI" > "$WGET_OUT" 2>& 1
+        handle_wget_exit $? "$URI"
+    fi
 
     if ! check_http_status 400; then
         return
@@ -305,8 +334,13 @@ send_req(){
 send_get_req(){
     GET_URI="$1"
 
-    curl -s $IPV_OPTION -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" "$GET_URI"
-    handle_curl_exit $? "$GET_URI"
+    if [ "$USE_WGET" != yes ] ;then
+        curl -s $IPV_OPTION -A "$USER_AGENT" -D "$RESP_HEADER" -o "$RESP_BODY" "$GET_URI"
+        handle_curl_exit $? "$GET_URI"
+    else
+        wget -q --retry-connrefused   $IPV_OPTION -U "$USER_AGENT" --save-headers  -O "$RESP_HEABOD" "$GET_URI" > "$WGET_OUT" 2>& 1
+        handle_wget_exit $? "$GET_URI"
+    fi
 }
 
 # account key handling
@@ -327,19 +361,19 @@ get_urls(){
     send_get_req "$CADIR"
 
     egrep -s -q -e '"newNonce"' "$RESP_BODY" &&
-    NEWNONCEURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -r -e 's/.*"newNonce":"([^"]*)".*/\1/')"
+    NEWNONCEURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"newNonce":"\([^"]*\)".*/\1/')"
 
     egrep -s -q -e '"newAccount"' "$RESP_BODY" &&
-    NEWACCOUNTURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -r -e 's/.*"newAccount":"([^"]*)".*/\1/')"
+    NEWACCOUNTURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"newAccount":"\([^"]*\)".*/\1/')"
 
     egrep -s -q -e '"newOrder"' "$RESP_BODY" &&
-    NEWORDERURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -r -e 's/.*"newOrder":"([^"]*)".*/\1/')"
+    NEWORDERURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"newOrder":"\([^"]*\)".*/\1/')"
 
     egrep -s -q -e '"revokeCert"' "$RESP_BODY" &&
-    REVOKECERTURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -r -e 's/.*"revokeCert":"([^"]*)".*/\1/')"
+    REVOKECERTURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"revokeCert":"\([^"]*\)".*/\1/')"
 
     egrep -s -q -e '"keyChange"' "$RESP_BODY" &&
-    KEYCHANGEURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -r -e 's/.*"keyChange":"([^"]*)".*/\1/')"
+    KEYCHANGEURL="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"keyChange":"\([^"]*\)".*/\1/')"
 }
 
 register_account_key(){
@@ -561,7 +595,7 @@ check_verification() {
             send_req "$DOMAIN_AUTHZ" ""
         
             if check_http_status 200; then
-                DOMAIN_STATUS="`tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"type":"'"$CHALLENGE_TYPE"'","status":"\(invalid\|valid\|pending\)".*/\1/'`"
+                DOMAIN_STATUS="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"type":"'"$CHALLENGE_TYPE"'","status":"\([^"]*\)".*/\1/')"
                 case "$DOMAIN_STATUS" in
                     valid)
                         log $DOMAIN is valid
@@ -630,10 +664,10 @@ csr_extract_domains() {
         2> "$OPENSSL_ERR"
     handle_openssl_exit $? "reading certifacte signing request"
 
-    DOMAINS="`sed -n '/X509v3 Subject Alternative Name:/ { n; s/^\s*DNS\s*:\s*//; s/\s*,\s*DNS\s*:\s*/ /g; p; q; }' "$OPENSSL_OUT"`"
+    DOMAINS="`sed -n '/X509v3 Subject Alternative Name:/ { n; s/^[	 ]*DNS[	 ]*:[	 ]*//; s/[	 ]*,[	 ]*DNS[	 ]*:[	 ]*/ /g; p; q; }' "$OPENSSL_OUT"`"
     # echo "$DOMAINS"; exit
     if [ -z "$DOMAINS" ]; then
-        DOMAINS="`sed -n '/Subject:/ {s/^.*CN=//; s/,*\s*$//; p}' "$OPENSSL_OUT"`"
+        DOMAINS="`sed -n '/Subject:/ {s/^.*CN=//; s/,*[	 ]*$//; p}' "$OPENSSL_OUT"`"
     fi
 }
 
@@ -645,7 +679,7 @@ request_certificate(){
     log finalize order
 
     NEW_CERT="$(
-            sed -r -e 's/-----BEGIN( NEW)? CERTIFICATE REQUEST-----/{"csr":"/; s/-----END( NEW)? CERTIFICATE REQUEST-----/"}/;s/\+/-/g;s!/!_!g;s/=//g' \
+            sed -e 's/-----BEGIN\( NEW\)\{0,1\} CERTIFICATE REQUEST-----/{"csr":"/; s/-----END\( NEW\)\{0,1\} CERTIFICATE REQUEST-----/"}/;s/+/-/g;s!/!_!g;s/=//g' \
                 "$TMP_SERVER_CSR" \
             | tr -d '\r\n' \
     )"
@@ -653,7 +687,7 @@ request_certificate(){
         send_req "$FINALIZE" "$NEW_CERT"
     
         if check_http_status 200; then
-            ORDER_STATUS="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"status":"\(invalid\|valid\|pending\|ready\|processing\)".*/\1/')"
+            ORDER_STATUS="$(tr -d ' \r\n' < "$RESP_BODY" | sed -e 's/.*"status":"\([^"]*\)".*/\1/')"
             case "$ORDER_STATUS" in
                 valid)
                     log order is valid
