@@ -109,7 +109,7 @@ IPV_OPTION=
 CHALLENGE_TYPE="http-01"
 
 # the date of the that version
-VERSION_DATE="2019-11-06"
+VERSION_DATE="2019-11-11"
 
 # The meaningful User-Agent to help finding related log entries in the boulder server log
 USER_AGENT="bruncsak/ght-acme.sh $VERSION_DATE"
@@ -207,7 +207,7 @@ handle_openssl_exit() {
 }
 
 check_http_status() {
-    fgrep -q "HTTP/1.1 $1 " "$RESP_HEADER"
+    egrep -s -q -e "^HTTP/[0-9.]+ $1 " "$RESP_HEADER"
 }
 
 unhandled_response() {
